@@ -18,6 +18,7 @@ pub struct Graph<N, E, T: GraphType = Directed> {
     phantomdata: PhantomData<T>,
 }
 
+#[derive(Clone)]
 pub struct Edge<E> {
     data: E,
     // start node idx and end node idx
@@ -37,7 +38,7 @@ impl<E> Edge<E> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Node<N> {
     data: N,
     /// the first ele is the idx value of first outcoming edge,
@@ -88,8 +89,8 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
 
     pub fn from_edges<I>(edges: I) -> Self
     where
-        I: Iterator,
-        I::Item: IntoWeightedEdge<E, NodeId = usize>,
+        I: IntoIterator,
+        <I as IntoIterator>::Item: IntoWeightedEdge<E, NodeId = usize>,
         N: Default,
     {
         let mut graph = Self::with_capacity((0, 0));
@@ -99,8 +100,8 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
 
     pub fn extends_with_edges<I>(&mut self, i: I)
     where
-        I: Iterator,
-        I::Item: IntoWeightedEdge<E, NodeId = usize>,
+        I: IntoIterator,
+        <I as IntoIterator>::Item: IntoWeightedEdge<E, NodeId = usize>,
         N: Default,
     {
         let mut iter = i.into_iter();
@@ -573,6 +574,20 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
             }));
 
         new_g
+    }
+}
+
+impl<N, E, T: GraphType> Clone for Graph<N, E, T>
+where
+    N: Clone,
+    E: Clone,
+{
+    fn clone(&self) -> Self {
+        Graph {
+            nodes: self.nodes.clone(),
+            edges: self.edges.clone(),
+            phantomdata: PhantomData,
+        }
     }
 }
 
