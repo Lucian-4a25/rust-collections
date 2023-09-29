@@ -2,7 +2,7 @@ use super::visit::{
     EdgeRef, GetAdjacencyMatrix, GraphBase, GraphProp, GraphRef, IntoEdgeReferences, IntoEdges,
     IntoNeighborsDirected, IntoNodeIdentifiers, NodeCount, NodeIndexable, Visitable,
 };
-use super::{Directed, Direction, GraphType, UnDirected};
+use super::{Directed, Direction, GraphType, IntoWeightedEdge, UnDirected};
 use crate::graph::visit::IntoNeiborghbors;
 use fixedbitset::FixedBitSet;
 use std::cmp::max as max_num;
@@ -83,6 +83,38 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
             nodes: Vec::with_capacity(n),
             edges: Vec::with_capacity(e),
             phantomdata: PhantomData,
+        }
+    }
+
+    pub fn from_edges<I>(edges: I) -> Self
+    where
+        I: Iterator,
+        I::Item: IntoWeightedEdge<E, NodeId = usize>,
+        N: Default,
+    {
+        let mut graph = Self::with_capacity((0, 0));
+        graph.extends_with_edges(edges);
+        graph
+    }
+
+    pub fn extends_with_edges<I>(&mut self, i: I)
+    where
+        I: Iterator,
+        I::Item: IntoWeightedEdge<E, NodeId = usize>,
+        N: Default,
+    {
+        let mut iter = i.into_iter();
+        let (size_hint, _) = iter.size_hint();
+        self.edges.reserve(size_hint);
+
+        while let Some(edge) = iter.next() {
+            let (from, to, weight) = edge.into_weighted_edge();
+            let max_pos = std::cmp::max(from, to);
+            // make sure there is a node for edge
+            while max_pos >= self.node_count() {
+                self.add_node(N::default());
+            }
+            self.add_edge(from, to, weight);
         }
     }
 
@@ -792,6 +824,54 @@ impl<'a, N, E, T: GraphType> IntoNeighborsDirected for &'a Graph<N, E, T> {
     }
 }
 
+// #[test]
+// fn test_trait_definition() {
+//     use super::*;
+
+//     struct Foo<T>
+//     where
+//         T: Default,
+//     {
+//         a: T,
+//     }
+
+//     let a: Foo<u32> = Foo {
+//         a: Default::default(),
+//     };
+//     println!("{}", a.a);
+
+//     fn test_trait_definition<G, M>(graph: &G) -> M
+//     where
+//         G: Visitable,
+//         M: Default,
+//         // G::Map: Visitable,
+//     {
+//         println!("do something");
+//         graph.visit_map();
+
+//         M::default()
+//     }
+
+//     let mut graph = Graph::new();
+//     graph.add_node(1);
+//     graph.add_edge(0, 0, ());
+
+//     test_trait_definition::<_, u32>(&graph);
+// }
+
+impl<N, E, T: GraphType> Visitable for Graph<N, E, T> {
+    type Map = FixedBitSet;
+
+    fn reset_map(&self, map: &mut Self::Map) {
+        map.clear();
+        map.grow(self.node_count());
+    }
+
+    fn visit_map(&self) -> Self::Map {
+        FixedBitSet::with_capacity(self.node_count())
+    }
+}
+
 impl<'a, N, E, T: GraphType> Visitable for &'a Graph<N, E, T> {
     type Map = FixedBitSet;
 
@@ -857,10 +937,12 @@ impl<'a, N, E, T: GraphType> GraphProp for &'a Graph<N, E, T> {
     }
 }
 
-impl<N, E, T: GraphType> GetAdjacencyMatrix for Graph<N, E, T> {
+/// This could be replaced a structure similiar with CSR to check adjacent relation of nodes,
+/// thus we could save more space to just use a pure array.
+impl<'a, N, E, T: GraphType> GetAdjacencyMatrix for &'a Graph<N, E, T> {
     type AdjMatrix = HashMap<Self::NodeId, HashSet<Self::NodeId>>;
 
-    fn adjacency_matrix(&self) -> Self::AdjMatrix {
+    fn adjacency_matrix(self) -> Self::AdjMatrix {
         let mut adjmatrix = HashMap::new();
         for node_id in self.node_identifiers() {
             let neighbor_container = adjmatrix.entry(node_id).or_insert_with(|| HashSet::new());
@@ -872,7 +954,7 @@ impl<N, E, T: GraphType> GetAdjacencyMatrix for Graph<N, E, T> {
         adjmatrix
     }
 
-    fn is_adjacent(&self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool {
+    fn is_adjacent(self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool {
         matrix
             .get(&a)
             .and_then(|m| Some(m.contains(&b)))
@@ -902,21 +984,47 @@ mod graph_api {
         graph.add_edge(1, 4, 5);
         graph.add_edge(1, 5, 6);
 
-        let mut weight = 7;
-        for _ in 0..graph.edge_count() {
-            assert_eq!(graph.remove_edge(0), Some(weight));
-            weight -= 1;
+        macro_rules! check_graph_basic_prop {
+            ($graph: tt) => {
+                let mut weight = 7;
+                for _ in 0..graph.edge_count() {
+                    assert_eq!(graph.remove_edge(0), Some(weight));
+                    weight -= 1;
+                }
+
+                // remove all of nodes
+                for i in 0..graph.node_count() {
+                    let name = if i == 0 {
+                        famous_physicist[0]
+                    } else {
+                        famous_physicist[famous_physicist.len() - i]
+                    };
+                    assert_eq!(graph.remove_node(0), Some(name));
+                }
+            };
         }
 
-        // remove all of nodes
-        for i in 0..graph.node_count() {
-            let name = if i == 0 {
-                famous_physicist[0]
-            } else {
-                famous_physicist[famous_physicist.len() - i]
-            };
-            assert_eq!(graph.remove_node(0), Some(name));
+        check_graph_basic_prop!(graph);
+        graph.clear();
+        let famous_physicist = [
+            "Galileo", "Newton", "Faraday", "Maxwell", "Einstein", "Planck",
+        ];
+        for name in famous_physicist.clone() {
+            graph.add_node(name);
         }
+        graph.extends_with_edges(
+            [
+                (0, 1, 7),
+                (1, 2, 1),
+                (2, 3, 2),
+                (3, 4, 3),
+                (0, 3, 4),
+                (1, 4, 5),
+                (1, 5, 6),
+            ]
+            .into_iter(),
+        );
+        check_graph_basic_prop!(graph);
     }
 
     #[test]
