@@ -1,11 +1,12 @@
 use super::visit::{
-    EdgeRef, GraphBase, GraphProp, GraphRef, IntoEdgeReferences, IntoEdges, IntoNeighborsDirected,
-    IntoNodeIdentifiers, NodeCount, NodeIndexable, Visitable,
+    EdgeRef, GetAdjacencyMatrix, GraphBase, GraphProp, GraphRef, IntoEdgeReferences, IntoEdges,
+    IntoNeighborsDirected, IntoNodeIdentifiers, NodeCount, NodeIndexable, Visitable,
 };
 use super::{Directed, Direction, GraphType, UnDirected};
 use crate::graph::visit::IntoNeiborghbors;
 use fixedbitset::FixedBitSet;
 use std::cmp::max as max_num;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut, Range};
 
@@ -853,6 +854,29 @@ impl<'a, N, E, T: GraphType> NodeIndexable for &'a Graph<N, E, T> {
 impl<'a, N, E, T: GraphType> GraphProp for &'a Graph<N, E, T> {
     fn is_directed(self) -> bool {
         Graph::is_directed(self)
+    }
+}
+
+impl<N, E, T: GraphType> GetAdjacencyMatrix for Graph<N, E, T> {
+    type AdjMatrix = HashMap<Self::NodeId, HashSet<Self::NodeId>>;
+
+    fn adjacency_matrix(&self) -> Self::AdjMatrix {
+        let mut adjmatrix = HashMap::new();
+        for node_id in self.node_identifiers() {
+            let neighbor_container = adjmatrix.entry(node_id).or_insert_with(|| HashSet::new());
+            for neighbor_id in self.neighbors(node_id) {
+                neighbor_container.insert(neighbor_id);
+            }
+        }
+
+        adjmatrix
+    }
+
+    fn is_adjacent(&self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool {
+        matrix
+            .get(&a)
+            .and_then(|m| Some(m.contains(&b)))
+            .unwrap_or(false)
     }
 }
 

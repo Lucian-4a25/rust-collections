@@ -125,6 +125,14 @@ pub trait GraphProp: GraphBase {
     fn is_directed(self) -> bool;
 }
 
+pub trait GetAdjacencyMatrix: GraphBase {
+    type AdjMatrix;
+
+    fn adjacency_matrix(&self) -> Self::AdjMatrix;
+
+    fn is_adjacent(&self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool;
+}
+
 /// second general version of deep first search
 pub struct Dfs<N, VM> {
     pub queue: VecDeque<N>,

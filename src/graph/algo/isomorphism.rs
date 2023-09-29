@@ -1,11 +1,11 @@
 use crate::graph::{
-    visit::{IntoNeighborsDirected, IntoNodeIdentifiers, NodeCount, NodeIndexable},
+    visit::{GetAdjacencyMatrix, IntoNeighborsDirected, NodeCount, NodeIndexable},
     Direction,
 };
 use std::collections::HashMap;
 
 /// state space representation of VF2 algorithm
-struct SSR<G> {
+struct SSR<G: GetAdjacencyMatrix> {
     graph: G,
     // the node idx mapping to another graph, don't exist indicate no reflection
     mapping: Vec<usize>,
@@ -15,22 +15,21 @@ struct SSR<G> {
     // the in of Tins(s) nodes, zero indicates the current node position is not
     // in the Tout(s) range
     ins: Vec<usize>,
-    min_in: usize,
-    min_out: usize,
     // record the possible depth val possition of a specific depth except self,
     // the first param represent the out position, and sendcond represent the in
     // position. None indicates it doesn't have overlap position with other depth
     // position. Used to match possible candidate precisely.
-    upper_depth_record: HashMap<usize, (Vec<usize>, Vec<usize>)>,
+    overlap_depth_record: HashMap<usize, (Vec<usize>, Vec<usize>)>,
     // node count of underlying graph
     node_count: usize,
     // current depth of search
     depth: usize,
+    adjacency_matrix: G::AdjMatrix,
 }
 
 impl<G> SSR<G>
 where
-    G: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
     fn new(g: G) -> Self {
         let node_count = g.node_count();
@@ -39,20 +38,12 @@ where
             mapping: vec![usize::MAX; node_count],
             outs: vec![0; node_count],
             ins: vec![0; node_count],
-            min_in: 0,
-            min_out: 0,
-            upper_depth_record: Default::default(),
+            overlap_depth_record: Default::default(),
             node_count,
             depth: 0,
+            adjacency_matrix: g.adjacency_matrix(),
         }
     }
-
-    // fn node_neighbors(&self, n: usize) {
-    //     let node_id = self.graph.from_index(n);
-    //     for neighbor in self.graph.neighbors_directed(node_id, Direction::Outcoming) {
-
-    //     }
-    // }
 }
 
 #[allow(dead_code)]
@@ -60,10 +51,24 @@ where
 /// and every pair of nodes' edges in each graph must be same nodes.
 pub fn is_isomorphism_matching<G0, G1>(g0: G0, g1: G1) -> bool
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    todo!()
+    isomorphism_matching_iter(g0, g1).is_some()
+}
+
+#[allow(dead_code)]
+pub fn isomorphism_matching_iter<G0, G1>(g0: G0, g1: G1) -> Option<Vec<usize>>
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+{
+    if g0.node_count() != g1.node_bound() {
+        return None;
+    }
+    let (s0, s1) = (SSR::new(g0), SSR::new(g1));
+
+    isomorphsim_matching(s0, s1, false)
 }
 
 #[allow(dead_code)]
@@ -76,10 +81,10 @@ where
 /// candidate pair in the mapping, if fail, pop up last mapping pair.
 pub fn is_subgraph_isomorphism<G0, G1>(g0: G0, g1: G1) -> bool
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    todo!()
+    subgraph_isomorphism_matching_iter(g0, g1).is_some()
 }
 
 #[allow(dead_code)]
@@ -87,33 +92,47 @@ where
 /// pair for the isomorphism relation.
 pub fn subgraph_isomorphism_matching_iter<G0, G1>(g0: G0, g1: G1) -> Option<Vec<usize>>
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
     let (s0, s1) = (SSR::new(g0), SSR::new(g1));
+    isomorphsim_matching(s0, s1, true)
+}
+
+fn isomorphsim_matching<G0, G1>(
+    mut s0: SSR<G0>,
+    mut s1: SSR<G1>,
+    match_sub_graph: bool,
+) -> Option<Vec<usize>>
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+{
     let mut stack = Vec::new();
 
     'outer: loop {
-        let res = check_next_candidate(&s1, &s1);
+        let res = check_next_candidate(&s1, &s1, match_sub_graph);
         if let Some(nodes) = res {
-            mark_candidate_pair(&s0, &s1, nodes);
+            mark_candidate_pair(&mut s0, &mut s1, nodes);
             stack.push(nodes);
             continue;
         }
 
-        // check if all nodes has been mapped
+        // check if all nodes has been added to the mapping
         if s0.depth == s0.node_count {
             return Some(s0.mapping);
         }
 
         // pop last node mapping pair, and pick the node pair from last position
         while let Some(last_nodes_pair) = stack.pop() {
-            unmark_candidate_mapping(&s0, &s1, last_nodes_pair);
+            unmark_candidate_mapping(&mut s0, &mut s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
-            // last_nodes_pair.1
-            if let Some(nodes) = check_next_candidate_from(&s0, &s1, last_nodes_pair.1 + 1) {
+            // last_nodes_pair.1 + 1
+            if let Some(nodes) =
+                check_next_candidate_from(&s0, &s1, last_nodes_pair.1 + 1, match_sub_graph)
+            {
                 stack.push(nodes);
-                mark_candidate_pair(&s0, &s1, nodes);
+                mark_candidate_pair(&mut s0, &mut s1, nodes);
                 continue 'outer;
             }
         }
@@ -132,30 +151,110 @@ where
 
 #[allow(dead_code)]
 /// Add a feasible pair node to the mapping
-fn mark_candidate_pair<G0, G1>(s0: &SSR<G0>, s1: &SSR<G1>, s: (usize, usize)) {
-    todo!()
+fn mark_candidate_pair<G0, G1>(s0: &mut SSR<G0>, s1: &mut SSR<G1>, (n0, n1): (usize, usize))
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+{
+    #[inline]
+    fn advance_ssr<G>(s: &mut SSR<G>, (n0, n1): (usize, usize))
+    where
+        G: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    {
+        debug_assert!(s.mapping[n0] == usize::MAX);
+        s.mapping[n0] = n1;
+        s.depth += 1;
+        for out_neighbor in s
+            .graph
+            .neighbors_directed(s.graph.from_index(n0), Direction::Outcoming)
+        {
+            let out_neighbor_id = s.graph.to_index(out_neighbor);
+            if s.outs[out_neighbor_id] == 0 {
+                s.outs[out_neighbor_id] = s.depth;
+            } else {
+                let overlap_record = s
+                    .overlap_depth_record
+                    .entry(n0)
+                    .or_insert_with(|| Default::default());
+                overlap_record.0.push(out_neighbor_id);
+            }
+        }
+
+        for in_neighbor in s
+            .graph
+            .neighbors_directed(s.graph.from_index(n0), Direction::Incoming)
+        {
+            let in_neighbor_id = s.graph.to_index(in_neighbor);
+            if s.ins[in_neighbor_id] == 0 {
+                s.ins[in_neighbor_id] = s.depth;
+            } else {
+                let overlap_record = s
+                    .overlap_depth_record
+                    .entry(n0)
+                    .or_insert_with(|| Default::default());
+                overlap_record.1.push(in_neighbor_id);
+            }
+        }
+    }
+
+    advance_ssr(s0, (n0, n1));
+    advance_ssr(s1, (n1, n0));
 }
 
 #[allow(dead_code)]
-/// Remove a pair of node from the mapping
-fn unmark_candidate_mapping<G0, G1>(s0: &SSR<G0>, s1: &SSR<G1>, s: (usize, usize)) {
-    todo!()
+/// unmark a pair of node from the mapping
+fn unmark_candidate_mapping<G0, G1>(s0: &mut SSR<G0>, s1: &mut SSR<G1>, (n0, n1): (usize, usize))
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+{
+    #[inline]
+    fn backforward_ssr_state<G>(s: &mut SSR<G>, n: usize)
+    where
+        G: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    {
+        debug_assert_ne!(s.mapping[n], usize::MAX);
+        s.mapping[n] = usize::MAX;
+
+        let depth = s.depth;
+        for d in s.ins.iter_mut() {
+            if *d == depth {
+                *d = 0;
+            }
+        }
+        for d in s.outs.iter_mut() {
+            if *d == depth {
+                *d = 0;
+            }
+        }
+
+        s.overlap_depth_record.remove(&depth);
+        s.depth -= 1;
+    }
+
+    backforward_ssr_state(s0, n0);
+    backforward_ssr_state(s1, n1);
 }
 
 #[allow(dead_code)]
 /// check the feasibility rules of the possible node pair,
 /// There are five rules for standard VF2 algorithm:
 /// Rpre ^ Rssuc ^ Rin ^ Rout ^ Rnew
-fn check_feasibility<G0, G1>(s0: &SSR<G0>, s1: &SSR<G1>, (n0, n1): (usize, usize)) -> bool
+fn check_feasibility<G0, G1>(
+    s0: &SSR<G0>,
+    s1: &SSR<G1>,
+    (n0, n1): (usize, usize),
+    match_sub_graph: bool,
+) -> bool
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
     let s0_node_id = s0.graph.from_index(n0);
     let s1_node_id = s1.graph.from_index(n1);
 
     macro_rules! check_r_succ_prev {
-        ($s0_node_id: tt, $s0: tt) => {{
+        ($s0_node_id: tt, $s1_node_id: tt, $s0: tt, $s1: tt) => {{
             let (
                 mut s_succ_counter,
                 mut s_succ_t_ins,
@@ -176,6 +275,13 @@ where
                 // check Rpre rule
                 if is_in_mapping {
                     // check mapping position is the outcoming neighbor of n1
+                    if !$s1.graph.is_adjacent(
+                        &$s1.adjacency_matrix,
+                        $s1_node_id,
+                        $s1.graph.from_index(mapping_in_g1),
+                    ) {
+                        return false;
+                    }
                 }
 
                 // if this is a self-loop edge, then the n1 must be self-loop too
@@ -206,6 +312,13 @@ where
                 if is_in_maping {
                     // check Rsucc rule
                     // check mapping position is the outcoming neighbor of n1
+                    if !$s1.graph.is_adjacent(
+                        &$s1.adjacency_matrix,
+                        $s1.graph.from_index(mapping_in_g1),
+                        $s1_node_id,
+                    ) {
+                        return false;
+                    }
                 }
 
                 // if this is a self-loop edge, then the n1 must be self-loop too
@@ -247,7 +360,7 @@ where
         s0_prev_t_ins,
         s0_prev_t_outs,
         s0_prev_outside,
-    ) = check_r_succ_prev!(s0_node_id, s0);
+    ) = check_r_succ_prev!(s0_node_id, s1_node_id, s0, s1);
     let (
         s1_succ_counter,
         s1_succ_t_ins,
@@ -256,19 +369,33 @@ where
         s1_prev_t_ins,
         s1_prev_t_outs,
         s1_prev_outside,
-    ) = check_r_succ_prev!(s1_node_id, s1);
+    ) = check_r_succ_prev!(s1_node_id, s0_node_id, s1, s0);
 
-    // check Rin rule
-    s0_succ_t_ins <= s1_succ_t_ins
-    && s0_prev_t_ins <= s1_prev_t_ins
-        // check Rout rule
-        && s0_succ_t_outs <= s1_succ_t_outs
-        && s0_prev_t_outs <= s1_prev_t_outs
-        // check Rnew rule
-        && s0_succ_empty <= s1_succ_empty
-        && s0_prev_outside <= s1_prev_outside
-        // check sum
-        && s0_succ_counter <= s1_succ_counter
+    if match_sub_graph {
+        // check Rin rule
+        s0_succ_t_ins <= s1_succ_t_ins
+            && s0_prev_t_ins <= s1_prev_t_ins
+            // check Rout rule
+            && s0_succ_t_outs <= s1_succ_t_outs
+            && s0_prev_t_outs <= s1_prev_t_outs
+            // check Rnew rule
+            && s0_succ_empty <= s1_succ_empty
+            && s0_prev_outside <= s1_prev_outside
+            // check sum
+            && s0_succ_counter <= s1_succ_counter
+    } else {
+        // check Rin rule
+        s0_succ_t_ins == s1_succ_t_ins
+            && s0_prev_t_ins == s1_prev_t_ins
+            // check Rout rule
+            && s0_succ_t_outs == s1_succ_t_outs
+            && s0_prev_t_outs == s1_prev_t_outs
+            // check Rnew rule
+            && s0_succ_empty == s1_succ_empty
+            && s0_prev_outside == s1_prev_outside
+            // check sum
+            && s0_succ_counter == s1_succ_counter
+    }
 }
 
 #[allow(dead_code)]
@@ -285,26 +412,26 @@ fn candidate_iter_from<'a, G0, G1>(
     s0: &'a SSR<G0>,
     s1: &'a SSR<G1>,
     s1_from: usize,
-) -> Box<dyn Iterator<Item = (usize, usize)> + 'a> {
+) -> Box<dyn Iterator<Item = (usize, usize)> + 'a>
+where
+    G0: GetAdjacencyMatrix,
+    G1: GetAdjacencyMatrix,
+{
     // check possible Tout or Tin candidate pair
     for t in [TOUT, TIN] {
-        let (s0_min_start, s0_outs_or_ins) = if t == TOUT {
-            (s0.min_out, &s0.outs)
-        } else {
-            (s0.min_in, &s0.ins)
-        };
+        let s0_outs_or_ins = if t == TOUT { &s0.outs } else { &s0.ins };
 
-        let s0_out_or_in = s0_outs_or_ins[s0_min_start..]
+        let s0_out_or_in = s0_outs_or_ins[0..]
             .iter()
             .enumerate()
-            .find(|(i, &depth)| depth != 0 && s0.mapping[i + s0_min_start] == usize::MAX)
-            .map(|(i, &depth)| (depth, i + s0_min_start));
+            .find(|(i, &depth)| depth != 0 && s0.mapping[*i] == usize::MAX)
+            .map(|(i, &depth)| (depth, i));
 
         if let Some((depth, s0_node_id)) = s0_out_or_in {
             let (s1_min_start, s1_outs_or_ins) = if t == TOUT {
-                (std::cmp::max(s1_from, s1.min_out), &s1.outs)
+                (s1_from, &s1.outs)
             } else {
-                (std::cmp::max(s1_from, s1.min_in), &s1.ins)
+                (s1_from, &s1.ins)
             };
 
             let s1_out_or_in_iter = s1_outs_or_ins[s1_min_start..]
@@ -319,7 +446,7 @@ fn candidate_iter_from<'a, G0, G1>(
                     // check if it exist in the upper depth
                     d == depth
                         || s1
-                            .upper_depth_record
+                            .overlap_depth_record
                             .get(&node_idx)
                             .map(|(outs, ins)| {
                                 if t == TOUT {
@@ -353,15 +480,16 @@ fn check_next_candidate_from<G0, G1>(
     s0: &SSR<G0>,
     s1: &SSR<G1>,
     from: usize,
+    match_sub_graph: bool,
 ) -> Option<(usize, usize)>
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
     let mut candidate_node_iter = candidate_iter_from(s0, s1, from);
     // try all possible candidate from n0 in g0 to every node in g1
     while let Some(nodes) = candidate_node_iter.next() {
-        let is_feasible = check_feasibility(s0, s1, nodes);
+        let is_feasible = check_feasibility(s0, s1, nodes, match_sub_graph);
         if is_feasible {
             return Some(nodes);
         }
@@ -372,10 +500,14 @@ where
 
 /// pick one candidate node pair and check if it's feasible, return Some((usize, usize)) if
 /// it's feasible, None represents infeasible
-fn check_next_candidate<G0, G1>(s0: &SSR<G0>, s1: &SSR<G1>) -> Option<(usize, usize)>
+fn check_next_candidate<G0, G1>(
+    s0: &SSR<G0>,
+    s1: &SSR<G1>,
+    match_sub_graph: bool,
+) -> Option<(usize, usize)>
 where
-    G0: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + IntoNodeIdentifiers + IntoNeighborsDirected,
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    check_next_candidate_from(s0, s1, 0)
+    check_next_candidate_from(s0, s1, 0, match_sub_graph)
 }
