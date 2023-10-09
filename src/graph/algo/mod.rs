@@ -1,11 +1,11 @@
-mod astar;
-mod bellman_ford;
-mod dijkstra;
-mod feedback_arc_set;
-mod floyd_warshall;
-mod isomorphism;
-mod k_shortest_path;
-mod matching;
+pub mod astar;
+pub mod bellman_ford;
+pub mod dijkstra;
+pub mod feedback_arc_set;
+pub mod floyd_warshall;
+pub mod isomorphism;
+pub mod k_shortest_path;
+pub mod matching;
 
 use core::ops::Add;
 use std::{

@@ -75,17 +75,19 @@ where
     F0: Fn(G0::NodeWeight, G1::NodeWeight) -> bool,
     F1: Fn(G0::EdgeWeight, G1::EdgeWeight) -> bool,
 {
-    isomorphism_semantic_matching_iter(g0, g1, node_match, edge_match, match_subgraph).is_some()
+    isomorphism_semantic_matching_iter(g0, g1, node_match, edge_match, match_subgraph)
+        .map(|mut iter| iter.next().is_some())
+        .unwrap_or(false)
 }
 
 #[allow(dead_code)]
 pub fn isomorphism_semantic_matching_iter<G0, G1, F0, F1>(
     g0: G0,
     g1: G1,
-    node_match: F0,
-    edge_match: F1,
+    node_matcher: F0,
+    edge_matcher: F1,
     match_sub_graph: bool,
-) -> Option<Vec<usize>>
+) -> Option<impl Iterator<Item = Vec<usize>>>
 where
     G0: NodeIndexable
         + NodeCount
@@ -102,12 +104,20 @@ where
     F0: Fn(G0::NodeWeight, G1::NodeWeight) -> bool,
     F1: Fn(G0::EdgeWeight, G1::EdgeWeight) -> bool,
 {
-    if g0.node_count() != g1.node_bound() {
+    if !match_sub_graph && g0.node_count() != g1.node_bound() {
         return None;
     }
     let (s0, s1) = (SSR::new(g0), SSR::new(g1));
 
-    isomorphsim_matching(s0, s1, node_match, edge_match, match_sub_graph)
+    Some(IsomorphismMatcher {
+        s0,
+        s1,
+        node_matcher,
+        edge_matcher,
+        stack: Default::default(),
+        match_sub_graph,
+        last_from: None,
+    })
 }
 
 #[allow(dead_code)]
@@ -126,7 +136,10 @@ where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    isomorphism_matching_iter(g0, g1, match_sub_graph).is_some()
+    isomorphism_matching_iter(g0, g1, match_sub_graph)
+        .as_mut()
+        .map(|iter| iter.next().is_some())
+        .unwrap_or(false)
 }
 
 #[allow(dead_code)]
@@ -134,25 +147,73 @@ pub fn isomorphism_matching_iter<G0, G1>(
     g0: G0,
     g1: G1,
     match_sub_graph: bool,
-) -> Option<Vec<usize>>
+) -> Option<impl Iterator<Item = Vec<usize>>>
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    if g0.node_count() != g1.node_bound() {
+    if !match_sub_graph && g0.node_count() != g1.node_bound() {
         return None;
     }
     let (s0, s1) = (SSR::new(g0), SSR::new(g1));
 
-    isomorphsim_matching(s0, s1, NoSemanticMatch, NoSemanticMatch, match_sub_graph)
+    Some(IsomorphismMatcher {
+        s0,
+        s1,
+        node_matcher: NoSemanticMatch,
+        edge_matcher: NoSemanticMatch,
+        stack: Default::default(),
+        match_sub_graph,
+        last_from: None,
+    })
+}
+
+struct IsomorphismMatcher<G0, G1, NM, EM>
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
+{
+    s0: SSR<G0>,
+    s1: SSR<G1>,
+    node_matcher: NM,
+    edge_matcher: EM,
+    stack: Vec<(usize, usize)>,
+    match_sub_graph: bool,
+    last_from: Option<usize>,
+}
+
+impl<G0, G1, NM, EM> Iterator for IsomorphismMatcher<G0, G1, NM, EM>
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
+{
+    type Item = Vec<usize>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        isomorphsim_matching(
+            &mut self.s0,
+            &mut self.s1,
+            &mut self.node_matcher,
+            &mut self.edge_matcher,
+            self.match_sub_graph,
+            &mut self.stack,
+            &mut self.last_from,
+        )
+    }
 }
 
 fn isomorphsim_matching<G0, G1, NM, EM>(
-    mut s0: SSR<G0>,
-    mut s1: SSR<G1>,
-    mut node_matcher: NM,
-    mut edge_matcher: EM,
+    s0: &mut SSR<G0>,
+    s1: &mut SSR<G1>,
+    node_matcher: &mut NM,
+    edge_matcher: &mut EM,
     match_sub_graph: bool,
+    stack: &mut Vec<(usize, usize)>,
+    last_from: &mut Option<usize>,
 ) -> Option<Vec<usize>>
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
@@ -160,44 +221,38 @@ where
     NM: NodeMatcher<G0, G1>,
     EM: EdgeMatcher<G0, G1>,
 {
-    let mut stack = Vec::new();
+    let mut s1_from = last_from.as_ref().map(|from| from.clone()).unwrap_or(0);
 
     'outer: loop {
-        let res = check_next_candidate(
+        if let Some(nodes) = check_next_candidate_from(
             &s0,
             &s1,
-            &mut node_matcher,
-            &mut edge_matcher,
+            node_matcher,
+            edge_matcher,
             match_sub_graph,
-        );
-        if let Some(nodes) = res {
-            mark_candidate_pair(&mut s0, &mut s1, nodes);
+            s1_from,
+        ) {
+            mark_candidate_pair(s0, s1, nodes);
             stack.push(nodes);
             continue;
         }
 
         // check if all nodes has been added to the mapping
         if s0.depth == s0.node_count {
-            return Some(s0.mapping);
+            let result = Some(s0.mapping.iter().map(|v| v.clone()).collect());
+            let last_pair = stack.pop().unwrap();
+            unmark_candidate_mapping(s0, s1, last_pair);
+            *last_from = Some(last_pair.1 + 1);
+            return result;
         }
 
         // pop last node mapping pair, and pick the node pair from last position
-        while let Some(last_nodes_pair) = stack.pop() {
-            unmark_candidate_mapping(&mut s0, &mut s1, last_nodes_pair);
+        if let Some(last_nodes_pair) = stack.pop() {
+            unmark_candidate_mapping(s0, s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
             // last_nodes_pair.1 + 1
-            if let Some(nodes) = check_next_candidate_from(
-                &s0,
-                &s1,
-                &mut node_matcher,
-                &mut edge_matcher,
-                match_sub_graph,
-                last_nodes_pair.1 + 1,
-            ) {
-                stack.push(nodes);
-                mark_candidate_pair(&mut s0, &mut s1, nodes);
-                continue 'outer;
-            }
+            s1_from = last_nodes_pair.1 + 1;
+            continue;
         }
 
         // we could find a mapping in the stack, which indicates there is not
@@ -205,11 +260,7 @@ where
         break 'outer;
     }
 
-    if s0.depth == s0.node_count {
-        Some(s0.mapping)
-    } else {
-        None
-    }
+    None
 }
 
 #[allow(dead_code)]
@@ -237,7 +288,7 @@ where
             } else {
                 let overlap_record = s
                     .overlap_depth_record
-                    .entry(n0)
+                    .entry(s.depth)
                     .or_insert_with(|| Default::default());
                 overlap_record.0.push(out_neighbor_id);
             }
@@ -253,7 +304,7 @@ where
             } else {
                 let overlap_record = s
                     .overlap_depth_record
-                    .entry(n0)
+                    .entry(s.depth)
                     .or_insert_with(|| Default::default());
                 overlap_record.1.push(in_neighbor_id);
             }
@@ -307,8 +358,8 @@ fn check_feasibility<G0, G1, NM, EM>(
     s0: &SSR<G0>,
     s1: &SSR<G1>,
     (n0, n1): (usize, usize),
-    mut node_matcher: &mut NM,
-    mut edge_matcher: &mut EM,
+    node_matcher: &mut NM,
+    edge_matcher: &mut EM,
     match_sub_graph: bool,
 ) -> bool
 where
@@ -343,10 +394,10 @@ where
     macro_rules! check_r_succ_prev {
         ($s0_node_id: tt, $s1_node_id: tt, $s0: tt, $s1: tt, $start_point: tt) => {{
             let (
-                mut s_succ_counter,
+                mut s_counter_sum,
                 mut s_succ_t_ins,
                 mut s_succ_t_outs,
-                mut s_succ_empty,
+                mut s_succ_outside,
                 mut s_prev_t_ins,
                 mut s_prev_t_outs,
                 mut s_prev_outside,
@@ -399,11 +450,11 @@ where
                         s_succ_t_ins += 1;
                     }
                     if !neighbor_in_outs && !neighbor_in_ins {
-                        s_succ_empty += 1;
+                        s_succ_outside += 1;
                     }
                 }
 
-                s_succ_counter += 1;
+                s_counter_sum += 1;
             }
 
             for in_neighbor in $s0
@@ -460,14 +511,14 @@ where
                     }
                 }
 
-                s_succ_counter += 1;
+                s_counter_sum += 1;
             }
 
             (
-                s_succ_counter,
+                s_counter_sum,
                 s_succ_t_ins,
                 s_succ_t_outs,
-                s_succ_empty,
+                s_succ_outside,
                 s_prev_t_ins,
                 s_prev_t_outs,
                 s_prev_outside,
@@ -476,19 +527,19 @@ where
     }
 
     let (
-        s0_succ_counter,
+        s0_counter_sum,
         s0_succ_t_ins,
         s0_succ_t_outs,
-        s0_succ_empty,
+        s0_succ_outside,
         s0_prev_t_ins,
         s0_prev_t_outs,
         s0_prev_outside,
     ) = check_r_succ_prev!(s0_node_id, s1_node_id, s0, s1, 0);
     let (
-        s1_succ_counter,
+        s1_counter_sum,
         s1_succ_t_ins,
         s1_succ_t_outs,
-        s1_succ_empty,
+        s1_succ_outside,
         s1_prev_t_ins,
         s1_prev_t_outs,
         s1_prev_outside,
@@ -502,10 +553,10 @@ where
             && s0_succ_t_outs <= s1_succ_t_outs
             && s0_prev_t_outs <= s1_prev_t_outs
             // check Rnew rule
-            && s0_succ_empty <= s1_succ_empty
+            && s0_succ_outside <= s1_succ_outside
             && s0_prev_outside <= s1_prev_outside
             // check sum
-            && s0_succ_counter <= s1_succ_counter
+            && s0_counter_sum <= s1_counter_sum
     } else {
         // check Rin rule
         s0_succ_t_ins == s1_succ_t_ins
@@ -514,10 +565,10 @@ where
             && s0_succ_t_outs == s1_succ_t_outs
             && s0_prev_t_outs == s1_prev_t_outs
             // check Rnew rule
-            && s0_succ_empty == s1_succ_empty
+            && s0_succ_outside == s1_succ_outside
             && s0_prev_outside == s1_prev_outside
             // check sum
-            && s0_succ_counter == s1_succ_counter
+            && s0_counter_sum == s1_counter_sum
     }
 }
 
@@ -570,7 +621,7 @@ where
                     d == depth
                         || s1
                             .overlap_depth_record
-                            .get(&node_idx)
+                            .get(&depth)
                             .map(|(outs, ins)| {
                                 if t == TOUT {
                                     outs.contains(&node_idx)
@@ -591,8 +642,9 @@ where
         return Box::new(
             s1.mapping[s1_from..]
                 .iter()
-                .filter(|&p| *p == usize::MAX)
-                .map(move |i| (s0_node_id, i + s1_from)),
+                .enumerate()
+                .filter(|(_, &p)| p == usize::MAX)
+                .map(move |(i, _)| (s0_node_id, i + s1_from)),
         );
     }
 
@@ -626,6 +678,7 @@ where
     None
 }
 
+#[allow(dead_code)]
 /// pick one candidate node pair and check if it's feasible, return Some((usize, usize)) if
 /// it's feasible, None represents infeasible
 fn check_next_candidate<G0, G1, NM, EM>(

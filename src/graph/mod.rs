@@ -1,13 +1,13 @@
 pub use common::*;
 
-mod algo;
+pub mod algo;
 mod common;
-mod compressed_sparse_row;
-mod graph_adjacency_list;
-mod graph_dense_matrix;
-mod graph_sparse_dok;
-mod stable_vec;
-mod visit;
+pub mod compressed_sparse_row;
+pub mod graph_adjacency_list;
+pub mod graph_dense_matrix;
+pub mod graph_sparse_dok;
+pub mod stable_vec;
+pub mod visit;
 
 pub trait IntoWeightedEdge<E> {
     type NodeId;
