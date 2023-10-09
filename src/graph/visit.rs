@@ -45,10 +45,6 @@ pub trait EdgeRef: Copy {
     fn id(&self) -> Self::EdgeId;
 }
 
-// pub trait Some<T> {
-//     type N;
-// }
-
 pub trait IntoEdgeReferences: GraphRef {
     // example to specify generice param and associated param together
     // type S: Some<Self::NodeId, N = Self::NodeId>;
@@ -128,9 +124,31 @@ pub trait GraphProp: GraphBase {
 pub trait GetAdjacencyMatrix: GraphBase {
     type AdjMatrix;
 
-    fn adjacency_matrix(&self) -> Self::AdjMatrix;
+    fn adjacency_matrix(self) -> Self::AdjMatrix;
 
-    fn is_adjacent(&self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool;
+    fn is_adjacent(self, matrix: &Self::AdjMatrix, a: Self::NodeId, b: Self::NodeId) -> bool;
+}
+
+pub trait GraphData: GraphBase {
+    type NodeWeight;
+    type EdgeWeight;
+}
+
+pub trait GraphDataAccess: GraphData {
+    fn node_weight(self, node_id: Self::NodeId) -> Option<Self::NodeWeight>;
+
+    // return the Edge according to node_id pair
+    fn edge_weight(self, edge_id: Self::EdgeId) -> Option<Self::EdgeWeight>;
+}
+
+/// return edge_id if the two node has underlying edge
+pub trait IntoEdgeDirected: GraphBase {
+    fn edge_directed(
+        self,
+        node_id_0: Self::NodeId,
+        node_id_1: Self::NodeId,
+        direction: Direction,
+    ) -> Option<Self::EdgeId>;
 }
 
 /// second general version of deep first search

@@ -1,6 +1,7 @@
 use super::visit::{
-    EdgeRef, GetAdjacencyMatrix, GraphBase, GraphProp, GraphRef, IntoEdgeReferences, IntoEdges,
-    IntoNeighborsDirected, IntoNodeIdentifiers, NodeCount, NodeIndexable, Visitable,
+    EdgeRef, GetAdjacencyMatrix, GraphBase, GraphData, GraphDataAccess, GraphProp, GraphRef,
+    IntoEdgeDirected, IntoEdgeReferences, IntoEdges, IntoNeighborsDirected, IntoNodeIdentifiers,
+    NodeCount, NodeIndexable, Visitable,
 };
 use super::{Directed, Direction, GraphType, IntoWeightedEdge, UnDirected};
 use crate::graph::visit::IntoNeiborghbors;
@@ -157,15 +158,10 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
             panic!("unable to find the node to add edge");
         }
         let mut internal_edge = Edge::new(start_node, end_node, edge);
-        unsafe {
-            let node_mut = self.nodes.as_mut_ptr();
-            let (start_node_mut, end_node_mut) =
-                (&mut *node_mut.add(start_node), &mut *node_mut.add(end_node));
-            internal_edge.next[0] = start_node_mut.next[0];
-            internal_edge.next[1] = end_node_mut.next[1];
-            start_node_mut.next[0] = insertion_pos;
-            end_node_mut.next[1] = insertion_pos;
-        }
+        internal_edge.next[0] = self.nodes[start_node].next[0];
+        internal_edge.next[1] = self.nodes[end_node].next[1];
+        self.nodes[start_node].next[0] = insertion_pos;
+        self.nodes[end_node].next[1] = insertion_pos;
 
         self.edges.push(internal_edge);
 
@@ -327,6 +323,31 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
                     return Some(incoming_edge);
                 }
                 incoming_edge = edge.next[1];
+            }
+        }
+
+        None
+    }
+
+    /// find a edge from start node to end node with direction
+    ///
+    /// we ignore the judge of directed graph, cuz that will make direction param insignificant.
+    pub fn find_edge_directed(
+        &self,
+        start_node_idx: usize,
+        end_node_idx: usize,
+        direction: Direction,
+    ) -> Option<usize> {
+        let start_node = self.nodes.get(start_node_idx)?;
+        let is_outcoming = matches!(direction, Direction::Outcoming);
+        let another_node_pos = if is_outcoming { 0 } else { 1 };
+        let mut edge_idx = start_node.next[another_node_pos];
+
+        while let Some(edge) = self.edges.get(edge_idx) {
+            if edge.nodes[another_node_pos] == end_node_idx {
+                return Some(edge_idx);
+            } else {
+                edge_idx = edge.next[another_node_pos];
             }
         }
 
@@ -974,6 +995,32 @@ impl<'a, N, E, T: GraphType> GetAdjacencyMatrix for &'a Graph<N, E, T> {
             .get(&a)
             .and_then(|m| Some(m.contains(&b)))
             .unwrap_or(false)
+    }
+}
+
+impl<'a, N, E, T: GraphType> GraphData for &'a Graph<N, E, T> {
+    type NodeWeight = &'a N;
+    type EdgeWeight = &'a E;
+}
+
+impl<'a, N, E, T: GraphType> GraphDataAccess for &'a Graph<N, E, T> {
+    fn edge_weight(self, edge_id: Self::EdgeId) -> Option<Self::EdgeWeight> {
+        Graph::edge_weight(self, edge_id)
+    }
+
+    fn node_weight(self, node_id: Self::NodeId) -> Option<Self::NodeWeight> {
+        Graph::node_weight(self, node_id)
+    }
+}
+
+impl<'a, N, E, T: GraphType> IntoEdgeDirected for &'a Graph<N, E, T> {
+    fn edge_directed(
+        self,
+        start_node: Self::NodeId,
+        end_node: Self::NodeId,
+        direction: Direction,
+    ) -> Option<Self::EdgeId> {
+        Graph::find_edge_directed(self, start_node, end_node, direction)
     }
 }
 

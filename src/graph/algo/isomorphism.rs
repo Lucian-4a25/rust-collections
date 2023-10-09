@@ -1,8 +1,13 @@
 use crate::graph::{
-    visit::{GetAdjacencyMatrix, IntoNeighborsDirected, NodeCount, NodeIndexable},
+    visit::{
+        GetAdjacencyMatrix, GraphDataAccess, IntoEdgeDirected, IntoNeighborsDirected, NodeCount,
+        NodeIndexable,
+    },
     Direction,
 };
 use std::collections::HashMap;
+
+use self::semantic::{EdgeMatcher, NoSemanticMatch, NodeMatcher};
 
 /// state space representation of VF2 algorithm
 struct SSR<G: GetAdjacencyMatrix> {
@@ -47,28 +52,62 @@ where
 }
 
 #[allow(dead_code)]
-/// check if two graphs are isomorphism, two graphs are isomorphism when there are bijective between them,
-/// and every pair of nodes' edges in each graph must be same nodes.
-pub fn is_isomorphism_matching<G0, G1>(g0: G0, g1: G1) -> bool
+pub fn is_isomorphism_semantic_matching<G0, G1, F0, F1>(
+    g0: G0,
+    g1: G1,
+    node_match: F0,
+    edge_match: F1,
+    match_subgraph: bool,
+) -> bool
 where
-    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G0: NodeIndexable
+        + NodeCount
+        + GetAdjacencyMatrix
+        + IntoNeighborsDirected
+        + GraphDataAccess
+        + IntoEdgeDirected,
+    G1: NodeIndexable
+        + NodeCount
+        + GetAdjacencyMatrix
+        + IntoNeighborsDirected
+        + GraphDataAccess
+        + IntoEdgeDirected,
+    F0: Fn(G0::NodeWeight, G1::NodeWeight) -> bool,
+    F1: Fn(G0::EdgeWeight, G1::EdgeWeight) -> bool,
 {
-    isomorphism_matching_iter(g0, g1).is_some()
+    isomorphism_semantic_matching_iter(g0, g1, node_match, edge_match, match_subgraph).is_some()
 }
 
 #[allow(dead_code)]
-pub fn isomorphism_matching_iter<G0, G1>(g0: G0, g1: G1) -> Option<Vec<usize>>
+pub fn isomorphism_semantic_matching_iter<G0, G1, F0, F1>(
+    g0: G0,
+    g1: G1,
+    node_match: F0,
+    edge_match: F1,
+    match_sub_graph: bool,
+) -> Option<Vec<usize>>
 where
-    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G0: NodeIndexable
+        + NodeCount
+        + GetAdjacencyMatrix
+        + IntoNeighborsDirected
+        + GraphDataAccess
+        + IntoEdgeDirected,
+    G1: NodeIndexable
+        + NodeCount
+        + GetAdjacencyMatrix
+        + IntoNeighborsDirected
+        + GraphDataAccess
+        + IntoEdgeDirected,
+    F0: Fn(G0::NodeWeight, G1::NodeWeight) -> bool,
+    F1: Fn(G0::EdgeWeight, G1::EdgeWeight) -> bool,
 {
     if g0.node_count() != g1.node_bound() {
         return None;
     }
     let (s0, s1) = (SSR::new(g0), SSR::new(g1));
 
-    isomorphsim_matching(s0, s1, false)
+    isomorphsim_matching(s0, s1, node_match, edge_match, match_sub_graph)
 }
 
 #[allow(dead_code)]
@@ -79,39 +118,58 @@ where
 /// we need to match last candidate pair
 /// Step 2: check the feasibility rules for candidate pair, if succeed, mark current
 /// candidate pair in the mapping, if fail, pop up last mapping pair.
-pub fn is_subgraph_isomorphism<G0, G1>(g0: G0, g1: G1) -> bool
+///
+/// If match_sub_graph is true, check if g0 is isomorphism to a induced subgraph of g1,
+/// and return iterator all of mapping pair for the isomorphism relation.
+pub fn is_isomorphism_matching<G0, G1>(g0: G0, g1: G1, match_sub_graph: bool) -> bool
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
-    subgraph_isomorphism_matching_iter(g0, g1).is_some()
+    isomorphism_matching_iter(g0, g1, match_sub_graph).is_some()
 }
 
 #[allow(dead_code)]
-/// check if g0 is isomorphism to a induced subgraph of g1, and return iterator all of mapping
-/// pair for the isomorphism relation.
-pub fn subgraph_isomorphism_matching_iter<G0, G1>(g0: G0, g1: G1) -> Option<Vec<usize>>
-where
-    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
-    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
-{
-    let (s0, s1) = (SSR::new(g0), SSR::new(g1));
-    isomorphsim_matching(s0, s1, true)
-}
-
-fn isomorphsim_matching<G0, G1>(
-    mut s0: SSR<G0>,
-    mut s1: SSR<G1>,
+pub fn isomorphism_matching_iter<G0, G1>(
+    g0: G0,
+    g1: G1,
     match_sub_graph: bool,
 ) -> Option<Vec<usize>>
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
 {
+    if g0.node_count() != g1.node_bound() {
+        return None;
+    }
+    let (s0, s1) = (SSR::new(g0), SSR::new(g1));
+
+    isomorphsim_matching(s0, s1, NoSemanticMatch, NoSemanticMatch, match_sub_graph)
+}
+
+fn isomorphsim_matching<G0, G1, NM, EM>(
+    mut s0: SSR<G0>,
+    mut s1: SSR<G1>,
+    mut node_matcher: NM,
+    mut edge_matcher: EM,
+    match_sub_graph: bool,
+) -> Option<Vec<usize>>
+where
+    G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
+{
     let mut stack = Vec::new();
 
     'outer: loop {
-        let res = check_next_candidate(&s1, &s1, match_sub_graph);
+        let res = check_next_candidate(
+            &s0,
+            &s1,
+            &mut node_matcher,
+            &mut edge_matcher,
+            match_sub_graph,
+        );
         if let Some(nodes) = res {
             mark_candidate_pair(&mut s0, &mut s1, nodes);
             stack.push(nodes);
@@ -128,9 +186,14 @@ where
             unmark_candidate_mapping(&mut s0, &mut s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
             // last_nodes_pair.1 + 1
-            if let Some(nodes) =
-                check_next_candidate_from(&s0, &s1, last_nodes_pair.1 + 1, match_sub_graph)
-            {
+            if let Some(nodes) = check_next_candidate_from(
+                &s0,
+                &s1,
+                &mut node_matcher,
+                &mut edge_matcher,
+                match_sub_graph,
+                last_nodes_pair.1 + 1,
+            ) {
                 stack.push(nodes);
                 mark_candidate_pair(&mut s0, &mut s1, nodes);
                 continue 'outer;
@@ -240,21 +303,45 @@ where
 /// check the feasibility rules of the possible node pair,
 /// There are five rules for standard VF2 algorithm:
 /// Rpre ^ Rssuc ^ Rin ^ Rout ^ Rnew
-fn check_feasibility<G0, G1>(
+fn check_feasibility<G0, G1, NM, EM>(
     s0: &SSR<G0>,
     s1: &SSR<G1>,
     (n0, n1): (usize, usize),
+    mut node_matcher: &mut NM,
+    mut edge_matcher: &mut EM,
     match_sub_graph: bool,
 ) -> bool
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
 {
     let s0_node_id = s0.graph.from_index(n0);
     let s1_node_id = s1.graph.from_index(n1);
 
+    // check the node semantice feasibility
+    if NM::enabled() && !node_matcher.eq(s0.graph, s1.graph, s0_node_id, s1_node_id) {
+        return false;
+    }
+
+    macro_rules! field {
+        ($val: tt, 0) => {
+            $val.0
+        };
+        ($val: tt, 1) => {
+            $val.1
+        };
+        ($val: tt, 1 - 0) => {
+            $val.1
+        };
+        ($val: tt, 1 - 1) => {
+            $val.0
+        };
+    }
+
     macro_rules! check_r_succ_prev {
-        ($s0_node_id: tt, $s1_node_id: tt, $s0: tt, $s1: tt) => {{
+        ($s0_node_id: tt, $s1_node_id: tt, $s0: tt, $s1: tt, $start_point: tt) => {{
             let (
                 mut s_succ_counter,
                 mut s_succ_t_ins,
@@ -265,12 +352,18 @@ where
                 mut s_prev_outside,
             ) = (0, 0, 0, 0, 0, 0, 0);
 
+            let s0_node_idx = $s0.graph.to_index($s0_node_id);
             for out_neighbor in $s0
                 .graph
                 .neighbors_directed($s0_node_id, Direction::Outcoming)
             {
                 let out_neighrbor_idx = $s0.graph.to_index(out_neighbor);
-                let mapping_in_g1 = $s0.mapping[out_neighrbor_idx];
+                // if this is a self-loop edge, then the n1 must be self-loop too
+                let mapping_in_g1 = if out_neighrbor_idx == s0_node_idx {
+                    $s1.graph.to_index($s1_node_id)
+                } else {
+                    $s0.mapping[out_neighrbor_idx]
+                };
                 let is_in_mapping = mapping_in_g1 != usize::MAX;
                 // check Rpre rule
                 if is_in_mapping {
@@ -282,10 +375,21 @@ where
                     ) {
                         return false;
                     }
-                }
 
-                // if this is a self-loop edge, then the n1 must be self-loop too
-                if !is_in_mapping {
+                    // check the semantic rule of edge
+                    if EM::enabled() {
+                        let matcher_nodes_pair = (($s0_node_id, out_neighbor), ($s1_node_id, $s1.graph.from_index(mapping_in_g1)));
+                        if !edge_matcher.eq(
+                                s0.graph,
+                                s1.graph,
+                                field!(matcher_nodes_pair, $start_point),
+                                field!(matcher_nodes_pair, 1 - $start_point),
+                            ) {
+                                return false;
+                            }
+
+                    }
+                } else {
                     let neighbor_in_outs = s0.outs[out_neighrbor_idx] != 0;
                     let neighbor_in_ins = s0.ins[out_neighrbor_idx] != 0;
                     if neighbor_in_outs {
@@ -308,6 +412,8 @@ where
             {
                 let in_neighbor_idx = $s0.graph.to_index(in_neighbor);
                 let mapping_in_g1 = $s0.mapping[in_neighbor_idx];
+                // we already checked the self-loop case in outcoming edge,
+                // so we could ignore that case here
                 let is_in_maping = mapping_in_g1 != usize::MAX;
                 if is_in_maping {
                     // check Rsucc rule
@@ -319,10 +425,27 @@ where
                     ) {
                         return false;
                     }
-                }
 
-                // if this is a self-loop edge, then the n1 must be self-loop too
-                if !is_in_maping {
+                    // get the edge_id beteween $s0_node_id and in_neighbor, we have two options,
+                    // one: definie a new trait, which require the graph to not only return the neighbor_id
+                    // but also the edge_id, but that seems unneccsary for nosemantic matching.
+                    // two: define a independent trait, which read the two node_id pair, and return edge_id if
+                    // exists. The drawback of this method is we need to iterate all the edges list every time,
+                    // very low performance, but the code may seem more clear.
+
+                    // check the semantic rule of edge
+                    if EM::enabled() {
+                        let matcher_nodes_pair = ((in_neighbor, $s0_node_id), ($s1.graph.from_index(mapping_in_g1), $s1_node_id));
+                        if !edge_matcher.eq(
+                            s0.graph,
+                            s1.graph,
+                            field!(matcher_nodes_pair, $start_point),
+                            field!(matcher_nodes_pair, 1 - $start_point),
+                        ) {
+                            return false;
+                        }
+                    }
+                } else {
                     let neighbor_in_outs = s0.outs[in_neighbor_idx] != 0;
                     let neighbor_in_ins = s0.ins[in_neighbor_idx] != 0;
                     if neighbor_in_outs {
@@ -360,7 +483,7 @@ where
         s0_prev_t_ins,
         s0_prev_t_outs,
         s0_prev_outside,
-    ) = check_r_succ_prev!(s0_node_id, s1_node_id, s0, s1);
+    ) = check_r_succ_prev!(s0_node_id, s1_node_id, s0, s1, 0);
     let (
         s1_succ_counter,
         s1_succ_t_ins,
@@ -369,7 +492,7 @@ where
         s1_prev_t_ins,
         s1_prev_t_outs,
         s1_prev_outside,
-    ) = check_r_succ_prev!(s1_node_id, s0_node_id, s1, s0);
+    ) = check_r_succ_prev!(s1_node_id, s0_node_id, s1, s0, 1);
 
     if match_sub_graph {
         // check Rin rule
@@ -476,20 +599,25 @@ where
     Box::new(([] as [(usize, usize); 0]).into_iter())
 }
 
-fn check_next_candidate_from<G0, G1>(
+fn check_next_candidate_from<G0, G1, NM, EM>(
     s0: &SSR<G0>,
     s1: &SSR<G1>,
-    from: usize,
+    node_matcher: &mut NM,
+    edge_matcher: &mut EM,
     match_sub_graph: bool,
+    from: usize,
 ) -> Option<(usize, usize)>
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
 {
     let mut candidate_node_iter = candidate_iter_from(s0, s1, from);
     // try all possible candidate from n0 in g0 to every node in g1
     while let Some(nodes) = candidate_node_iter.next() {
-        let is_feasible = check_feasibility(s0, s1, nodes, match_sub_graph);
+        let is_feasible =
+            check_feasibility(s0, s1, nodes, node_matcher, edge_matcher, match_sub_graph);
         if is_feasible {
             return Some(nodes);
         }
@@ -500,14 +628,142 @@ where
 
 /// pick one candidate node pair and check if it's feasible, return Some((usize, usize)) if
 /// it's feasible, None represents infeasible
-fn check_next_candidate<G0, G1>(
+fn check_next_candidate<G0, G1, NM, EM>(
     s0: &SSR<G0>,
     s1: &SSR<G1>,
+    node_matcher: &mut NM,
+    edge_matcher: &mut EM,
     match_sub_graph: bool,
 ) -> Option<(usize, usize)>
 where
     G0: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
     G1: NodeIndexable + NodeCount + GetAdjacencyMatrix + IntoNeighborsDirected,
+    NM: NodeMatcher<G0, G1>,
+    EM: EdgeMatcher<G0, G1>,
 {
-    check_next_candidate_from(s0, s1, 0, match_sub_graph)
+    check_next_candidate_from(s0, s1, node_matcher, edge_matcher, match_sub_graph, 0)
+}
+
+mod semantic {
+    use crate::graph::{
+        visit::{GraphBase, GraphDataAccess, IntoEdgeDirected},
+        Direction,
+    };
+
+    pub trait NodeMatcher<G0: GraphBase, G1: GraphBase> {
+        fn enabled() -> bool;
+
+        fn eq(&mut self, g0: G0, g1: G1, node_id_0: G0::NodeId, node_id_1: G1::NodeId) -> bool;
+    }
+
+    pub trait EdgeMatcher<G0: GraphBase, G1: GraphBase> {
+        fn enabled() -> bool;
+
+        fn eq(
+            &mut self,
+            g0: G0,
+            g1: G1,
+            g0_nodes: (G0::NodeId, G0::NodeId),
+            g1_nodes: (G1::NodeId, G1::NodeId),
+        ) -> bool;
+    }
+
+    pub struct NoSemanticMatch;
+
+    impl<G0: GraphBase, G1: GraphBase> NodeMatcher<G0, G1> for NoSemanticMatch {
+        fn enabled() -> bool {
+            false
+        }
+
+        fn eq(
+            &mut self,
+            _g0: G0,
+            _g1: G1,
+            _node_id_0: <G0 as GraphBase>::NodeId,
+            _node_id_1: <G1 as GraphBase>::NodeId,
+        ) -> bool {
+            false
+        }
+    }
+
+    impl<G0: GraphBase, G1: GraphBase> EdgeMatcher<G0, G1> for NoSemanticMatch {
+        fn enabled() -> bool {
+            false
+        }
+
+        fn eq(
+            &mut self,
+            _g0: G0,
+            _g1: G1,
+            _: (G0::NodeId, G0::NodeId),
+            _: (G1::NodeId, G1::NodeId),
+        ) -> bool {
+            false
+        }
+    }
+
+    impl<G0, G1, F> NodeMatcher<G0, G1> for F
+    where
+        G0: GraphDataAccess + IntoEdgeDirected,
+        G1: GraphDataAccess + IntoEdgeDirected,
+        F: FnMut(G0::NodeWeight, G1::NodeWeight) -> bool,
+    {
+        fn enabled() -> bool {
+            true
+        }
+
+        fn eq(
+            &mut self,
+            g0: G0,
+            g1: G1,
+            node_id_0: <G0 as GraphBase>::NodeId,
+            node_id_1: <G1 as GraphBase>::NodeId,
+        ) -> bool {
+            if let (Some(n0), Some(n1)) = (
+                G0::node_weight(g0, node_id_0),
+                G1::node_weight(g1, node_id_1),
+            ) {
+                self(n0, n1)
+            } else {
+                false
+            }
+        }
+    }
+
+    impl<G0, G1, F> EdgeMatcher<G0, G1> for F
+    where
+        G0: GraphDataAccess + IntoEdgeDirected + Copy,
+        G1: GraphDataAccess + IntoEdgeDirected + Copy,
+        F: FnMut(G0::EdgeWeight, G1::EdgeWeight) -> bool,
+    {
+        fn enabled() -> bool {
+            true
+        }
+
+        fn eq(
+            &mut self,
+            g0: G0,
+            g1: G1,
+            (g0_node_id_0, g0_node_id_1): (<G0 as GraphBase>::NodeId, <G0 as GraphBase>::NodeId),
+            (g1_node_id_0, g1_node_id_1): (<G1 as GraphBase>::NodeId, <G1 as GraphBase>::NodeId),
+        ) -> bool {
+            let edge_0: Option<G0::EdgeId> =
+                g0.edge_directed(g0_node_id_0, g0_node_id_1, Direction::Outcoming);
+            let edge_1: Option<G1::EdgeId> =
+                g1.edge_directed(g1_node_id_0, g1_node_id_1, Direction::Outcoming);
+
+            if edge_0.is_none() && edge_1.is_none() {
+                return false;
+            }
+
+            if let (Some(n0), Some(n1)) = (
+                G0::edge_weight(g0, edge_0.unwrap()),
+                G1::edge_weight(g1, edge_1.unwrap()),
+            ) {
+                self(n0, n1)
+            } else {
+                false
+            }
+        }
+    }
 }
