@@ -5,7 +5,7 @@ use crate::graph::{
     },
     Direction,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use self::semantic::{EdgeMatcher, NoSemanticMatch, NodeMatcher};
 
@@ -233,21 +233,26 @@ where
             s1_from,
         ) {
             mark_candidate_pair(s0, s1, nodes);
+            s1_from = 0;
             stack.push(nodes);
+            // println!("mark nodes: {} {}", nodes.0, nodes.1);
             continue;
         }
 
         // check if all nodes has been added to the mapping
         if s0.depth == s0.node_count {
             let result = Some(s0.mapping.iter().map(|v| v.clone()).collect());
-            let last_pair = stack.pop().unwrap();
-            unmark_candidate_mapping(s0, s1, last_pair);
-            *last_from = Some(last_pair.1 + 1);
+            // in case empty graph, there is no stack to pop
+            if let Some(last_pair) = stack.pop() {
+                unmark_candidate_mapping(s0, s1, last_pair);
+                *last_from = Some(last_pair.1 + 1);
+            }
             return result;
         }
 
         // pop last node mapping pair, and pick the node pair from last position
         if let Some(last_nodes_pair) = stack.pop() {
+            // println!("unmark nodes: {} {}", last_nodes_pair.0, last_nodes_pair.1);
             unmark_candidate_mapping(s0, s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
             // last_nodes_pair.1 + 1
@@ -441,8 +446,8 @@ where
 
                     }
                 } else {
-                    let neighbor_in_outs = s0.outs[out_neighrbor_idx] != 0;
-                    let neighbor_in_ins = s0.ins[out_neighrbor_idx] != 0;
+                    let neighbor_in_outs = $s0.outs[out_neighrbor_idx] != 0;
+                    let neighbor_in_ins = $s0.ins[out_neighrbor_idx] != 0;
                     if neighbor_in_outs {
                         s_succ_t_outs += 1;
                     }
@@ -497,8 +502,8 @@ where
                         }
                     }
                 } else {
-                    let neighbor_in_outs = s0.outs[in_neighbor_idx] != 0;
-                    let neighbor_in_ins = s0.ins[in_neighbor_idx] != 0;
+                    let neighbor_in_outs = $s0.outs[in_neighbor_idx] != 0;
+                    let neighbor_in_ins = $s0.ins[in_neighbor_idx] != 0;
                     if neighbor_in_outs {
                         s_prev_t_outs += 1;
                     }
@@ -608,6 +613,17 @@ where
                 (s1_from, &s1.ins)
             };
 
+            let overlap_depth_list: HashSet<usize> = s1
+                .overlap_depth_record
+                .get(&depth)
+                .map(|(outs, ins)| {
+                    if t == TOUT {
+                        outs.iter().map(|i| i.clone()).collect()
+                    } else {
+                        ins.iter().map(|i| i.clone()).collect()
+                    }
+                })
+                .unwrap_or(Default::default());
             let s1_out_or_in_iter = s1_outs_or_ins[s1_min_start..]
                 .iter()
                 .enumerate()
@@ -617,19 +633,8 @@ where
                         return false;
                     }
 
-                    // check if it exist in the upper depth
-                    d == depth
-                        || s1
-                            .overlap_depth_record
-                            .get(&depth)
-                            .map(|(outs, ins)| {
-                                if t == TOUT {
-                                    outs.contains(&node_idx)
-                                } else {
-                                    ins.contains(&node_idx)
-                                }
-                            })
-                            .unwrap_or(false)
+                    // check if it exist in outs ins or in the upper depth
+                    d == depth || overlap_depth_list.contains(&node_idx)
                 })
                 .map(move |(i, _)| (s0_node_id, i + s1_min_start));
 

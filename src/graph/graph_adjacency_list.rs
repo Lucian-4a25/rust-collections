@@ -344,7 +344,7 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
         let mut edge_idx = start_node.next[another_node_pos];
 
         while let Some(edge) = self.edges.get(edge_idx) {
-            if edge.nodes[another_node_pos] == end_node_idx {
+            if edge.nodes[1 - another_node_pos] == end_node_idx {
                 return Some(edge_idx);
             } else {
                 edge_idx = edge.next[another_node_pos];
