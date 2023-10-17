@@ -6,6 +6,7 @@ pub mod floyd_warshall;
 pub mod isomorphism;
 pub mod k_shortest_path;
 pub mod matching;
+pub mod vf2pp_isomorphism;
 
 use core::ops::Add;
 use std::{

@@ -62,3 +62,20 @@ fn iso_large(bench: &mut Bencher) {
     bench.iter(|| is_isomorphism_matching(&g0, &g1, false));
     assert!(is_isomorphism_matching(&g0, &g1, false));
 }
+
+const SIZE: usize = 10;
+
+#[bench]
+fn test_realloc(bench: &mut Bencher) {
+    bench.iter(|| vec![0usize; SIZE]);
+}
+
+#[bench]
+fn test_reset(bench: &mut Bencher) {
+    let mut v: Vec<usize> = vec![100; SIZE];
+    bench.iter(|| {
+        for i in 0..SIZE {
+            v[i] = 0;
+        }
+    });
+}
