@@ -13,6 +13,102 @@ const NOT_IN_MAPPING: usize = usize::MAX;
 const G0_CON_IN_MAPPING: usize = usize::MAX;
 const G1_CON_IN_MAPPING: usize = usize::MAX;
 
+/// without label or semantice matching
+pub fn vf2pp_is_isomorphism_matching<G0, G1>(g0: G0, g1: G1, subgraph: bool) -> bool
+where
+    G0: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp,
+    G1: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp,
+{
+    Vf2ppMatcherBuilder::new()
+        .set_subgraph(subgraph)
+        .build(g0, g1)
+        .is_match()
+}
+
+pub fn vf2pp_is_isomorphism_semantic_matching<G0, G1, NM, EM>(
+    g0: G0,
+    g1: G1,
+    node_matcher: NM,
+    edge_matcher: EM,
+    subgraph: bool,
+) -> bool
+where
+    G0: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp
+        + GraphDataAccess
+        + IntoEdgeDirected
+        + Copy,
+    G1: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp
+        + GraphDataAccess
+        + IntoEdgeDirected
+        + Copy,
+    NM: FnMut(G0::NodeWeight, G1::NodeWeight) -> bool,
+    EM: FnMut(G0::EdgeWeight, G1::EdgeWeight) -> bool,
+{
+    Vf2ppMatcherBuilder::new()
+        .set_subgraph(subgraph)
+        .set_node_matcher(node_matcher)
+        .set_edge_matcher(edge_matcher)
+        .build(g0, g1)
+        .is_match()
+}
+
+pub fn vf2pp_isomorphism_semantic_matching_iter<'a, G0, G1, NM, EM>(
+    g0: G0,
+    g1: G1,
+    node_matcher: NM,
+    edge_matcher: EM,
+    subgraph: bool,
+) -> IsomorphismMatcher<'a, G0, G1, NM, EM>
+where
+    G0: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp
+        + GraphDataAccess
+        + IntoEdgeDirected
+        + Copy,
+    G1: IntoNeighborsDirected
+        + IntoNeighborsUnirected
+        + IntoNodeIdentifiers
+        + NodeIndexable
+        + NodeCount
+        + GraphProp
+        + GraphDataAccess
+        + IntoEdgeDirected
+        + Copy
+        + 'a,
+    NM: FnMut(G0::NodeWeight, G1::NodeWeight) -> bool,
+    EM: FnMut(G0::EdgeWeight, G1::EdgeWeight) -> bool,
+{
+    Vf2ppMatcherBuilder::new()
+        .set_subgraph(subgraph)
+        .set_node_matcher(node_matcher)
+        .set_edge_matcher(edge_matcher)
+        .build(g0, g1)
+}
+
 pub struct IsomorphismMatcher<'a, G0, G1, NM, EM>
 where
     G0: GraphBase,
@@ -263,7 +359,9 @@ where
                     if added[inner_node_id] {
                         continue;
                     }
-                    match node_label_num[inner_node_id].cmp(&node_label_num[inner_node_id]) {
+                    match node_label_num[node_labels[inner_node_id]]
+                        .cmp(&node_label_num[node_labels[inner_node_id]])
+                    {
                         Ordering::Less => {
                             min_node_id = inner_node_id;
                         }
@@ -344,7 +442,7 @@ where
                 (cur_order, cur_order, cur_order);
             let mut bfs_tree_node_cons = vec![0; g.node_count()];
             matching_order[cur_order] = node_idx;
-            added[cur_order] = true;
+            added[node_idx] = true;
 
             while cur_order <= last_added_pos {
                 // add all current layer's nodes
@@ -355,7 +453,7 @@ where
                         bfs_tree_node_cons[neighbor_id] += 1;
                         if !added[neighbor_id] {
                             last_added_pos += 1;
-                            added[last_added_pos] = true;
+                            added[neighbor_id] = true;
                             matching_order[last_added_pos] = neighbor_id;
                         }
                     }
@@ -405,8 +503,8 @@ where
     {
         // used to mark how many time a node has be visited, usize::MAX mean it already exist in the mapping
         let mut g0_node_cons = vec![0usize; g.node_count()];
-        let mut r_new = vec![vec![]; max_label + 1];
-        let mut r_in_out = vec![vec![]; max_label + 1];
+        let mut r_new = vec![vec![]; g.node_count()];
+        let mut r_in_out = vec![vec![]; g.node_count()];
         // `label_tmp` is used to record the label and num of same labels of current node's neighbor
         let mut label_in_out_tmp = vec![0; max_label + 1];
         let mut label_new_tmp = vec![0; max_label + 1];
@@ -415,14 +513,13 @@ where
         let mut cur_order = 0;
         while max_order > cur_order {
             let cur_node_idx = order[cur_order];
-            g0_node_cons[cur_node_idx] = G0_CON_IN_MAPPING;
 
             for neighbor in g.neighbors_undirected(g.from_index(cur_node_idx)) {
                 let neighbor_id = g.to_index(neighbor);
                 let neighbor_cons = g0_node_cons[neighbor_id];
                 if neighbor_cons != G0_CON_IN_MAPPING && neighbor_cons > 0 {
                     label_in_out_tmp[node_labels[neighbor_id]] += 1;
-                } else if g0_node_cons[neighbor_id] == 0 {
+                } else if neighbor_cons == 0 {
                     label_new_tmp[node_labels[neighbor_id]] += 1;
                 }
             }
@@ -444,6 +541,7 @@ where
                 }
             }
 
+            g0_node_cons[cur_node_idx] = G0_CON_IN_MAPPING;
             cur_order += 1;
         }
 
@@ -451,20 +549,30 @@ where
     }
 }
 
-pub struct Vf2ppMatcherBuilder<G0, G1, F0, F1, NM, EM>
-where
-    G0: GraphBase,
-    G1: GraphBase,
-    F0: NodeLabel<G0>,
-    F1: NodeLabel<G1>,
-    NM: NodeMatcher<G0, G1>,
-    EM: EdgeMatcher<G0, G1>,
-{
+pub struct Vf2ppMatcherBuilder<G0, G1, F0, F1, NM, EM> {
     node_matcher: NM,
     edge_matcher: EM,
-    label: Option<(F0, F1)>,
+    label: (F0, F1),
     subgraph: bool,
     phantomdata: PhantomData<(G0, G1)>,
+}
+
+impl<G0, G1>
+    Vf2ppMatcherBuilder<G0, G1, NoNodeLabel, NoNodeLabel, NoSemanticMatch, NoSemanticMatch>
+{
+    pub fn new() -> Self
+    where
+        G0: GraphBase,
+        G1: GraphBase,
+    {
+        Vf2ppMatcherBuilder {
+            node_matcher: NoSemanticMatch,
+            edge_matcher: NoSemanticMatch,
+            label: (NoNodeLabel, NoNodeLabel),
+            subgraph: false,
+            phantomdata: PhantomData,
+        }
+    }
 }
 
 impl<G0, G1, F0, F1, NM, EM> Vf2ppMatcherBuilder<G0, G1, F0, F1, NM, EM>
@@ -476,18 +584,9 @@ where
     NM: NodeMatcher<G0, G1>,
     EM: EdgeMatcher<G0, G1>,
 {
-    pub fn new() -> Vf2ppMatcherBuilder<G0, G1, F0, F1, NoSemanticMatch, NoSemanticMatch> {
-        Vf2ppMatcherBuilder {
-            node_matcher: NoSemanticMatch,
-            edge_matcher: NoSemanticMatch,
-            label: None,
-            subgraph: false,
-            phantomdata: PhantomData,
-        }
-    }
-
-    pub fn set_subgraph(&mut self, match_subgraph: bool) {
+    pub fn set_subgraph(mut self, match_subgraph: bool) -> Self {
         self.subgraph = match_subgraph;
+        self
     }
 }
 
@@ -511,11 +610,7 @@ where
     EM: EdgeMatcher<G0, G1>,
 {
     pub fn build<'a>(self, g0: G0, g1: G1) -> IsomorphismMatcher<'a, G0, G1, NM, EM> {
-        let vf2pp = if let Some((label0, label1)) = self.label {
-            VF2PP::new(g0, g1, label0, label1)
-        } else {
-            VF2PP::new(g0, g1, NoNodeLabel, NoNodeLabel)
-        };
+        let vf2pp = VF2PP::new(g0, g1, self.label.0, self.label.1);
 
         IsomorphismMatcher::new(vf2pp, self.node_matcher, self.edge_matcher, self.subgraph)
     }
@@ -525,13 +620,26 @@ impl<G0, G1, F0, F1, NM, EM> Vf2ppMatcherBuilder<G0, G1, F0, F1, NM, EM>
 where
     G0: GraphBase + GraphDataAccess,
     G1: GraphBase + GraphDataAccess,
+    F0: NodeLabel<G0>,
+    F1: NodeLabel<G1>,
     NM: NodeMatcher<G0, G1>,
     EM: EdgeMatcher<G0, G1>,
-    F0: FnMut(G0::NodeWeight) -> usize,
-    F1: FnMut(G1::NodeWeight) -> usize,
 {
-    pub fn set_label(&mut self, label: (F0, F1)) {
-        self.label = Some(label);
+    pub fn set_label<LF0, LF1>(
+        self,
+        label: (LF0, LF1),
+    ) -> Vf2ppMatcherBuilder<G0, G1, LF0, LF1, NM, EM>
+    where
+        LF0: FnMut(G0::NodeWeight) -> usize,
+        LF1: FnMut(G1::NodeWeight) -> usize,
+    {
+        Vf2ppMatcherBuilder {
+            node_matcher: self.node_matcher,
+            edge_matcher: self.edge_matcher,
+            label,
+            subgraph: self.subgraph,
+            phantomdata: PhantomData,
+        }
     }
 }
 
@@ -712,14 +820,12 @@ where
             return Some(mapping.iter().map(|v| v.clone()).collect());
         }
         let n = order[cur_depth];
-        // let mapping_in_g1 = mapping[n];
 
         // There are two possible cases:
         // 1. we need to find a fresh candidate in this depth
         // 2. we need to find a candidate from `g1_candidates_nodes_iter`, and forward based previous position
-        let cur_iter_idx = g1_candidate_nodes_iter.len() - 1;
-        if cur_depth > cur_iter_idx {
-            debug_assert!(cur_depth == cur_iter_idx + 1);
+        if cur_depth >= g1_candidate_nodes_iter.len() {
+            debug_assert!(cur_depth == g1_candidate_nodes_iter.len());
             // it's a fresh start, we first need to check the neighbor of n
             let mut has_mapping_neighbor = false;
             for neighbor in g0.neighbors_undirected(g0.from_index(n)) {
@@ -741,7 +847,7 @@ where
         let cur_g1_iter = g1_candidate_nodes_iter.last_mut().unwrap();
         while let Some(m_id) = cur_g1_iter.next() {
             let m = g1.to_index(m_id);
-            if mapping[m] == NOT_IN_MAPPING
+            if g1_node_cons[m] != G1_CON_IN_MAPPING
                 && check_feasibility(
                     g0.from_index(n),
                     g1.from_index(m),
@@ -790,6 +896,7 @@ fn mark_candidate_pair<G>(
 {
     *depth += 1;
     mapping[n] = m;
+    println!("mark node pair: {} {}", n, m);
     g1_node_cons[m] = G1_CON_IN_MAPPING;
     for neighbor in g1.neighbors_undirected(g1.from_index(m)) {
         let neighbor_idx = g1.to_index(neighbor);
@@ -812,11 +919,14 @@ fn unmark_candidate_pair<'a, G>(
 {
     if *depth == 0 {
         *depth = usize::MAX;
+        return;
     } else {
         *depth -= 1;
     }
-    let m = mapping[matching_order[*depth]];
-    mapping[matching_order[*depth]] = NOT_IN_MAPPING;
+    let n = matching_order[*depth];
+    let m = mapping[n];
+    println!("unmark node pair: {} {}", n, m);
+    mapping[n] = NOT_IN_MAPPING;
     g1_node_cons[m] = 0;
     g1_candidate_nodes_iter.pop();
     for neighbor in g1.neighbors_undirected(g1.from_index(m)) {
@@ -883,7 +993,7 @@ where
         };
         for neighbor in g1.neighbors_directed(m, d) {
             let neighrbor_id = g1.to_index(neighbor);
-            if mapping[neighrbor_id] != NOT_IN_MAPPING {
+            if g1_node_cons[neighrbor_id] == G1_CON_IN_MAPPING {
                 g1_mapping[neighrbor_id] += 1;
             }
         }
@@ -891,7 +1001,7 @@ where
 
     // check all mapping in g0
     for d in [Outcoming, Incoming] {
-        if !g1.is_directed() && d == Incoming {
+        if !g0.is_directed() && d == Incoming {
             break;
         }
         let g1_mapping = if d == Outcoming {
@@ -907,18 +1017,20 @@ where
                     return false;
                 } else {
                     g1_mapping[mapping_neighbor_id] -= 1;
-                    let g0_nodes = if d == Outcoming {
-                        (n, neighbor)
-                    } else {
-                        (neighbor, n)
-                    };
-                    let g1_nodes = if d == Outcoming {
-                        (m, g1.from_index(mapping_neighbor_id))
-                    } else {
-                        (g1.from_index(mapping_neighbor_id), m)
-                    };
-                    if edge_matcher_enabled && !edge_matcher.eq(g0, g1, g0_nodes, g1_nodes) {
-                        return false;
+                    if edge_matcher_enabled {
+                        let g0_nodes = if d == Outcoming {
+                            (n, neighbor)
+                        } else {
+                            (neighbor, n)
+                        };
+                        let g1_nodes = if d == Outcoming {
+                            (m, g1.from_index(mapping_neighbor_id))
+                        } else {
+                            (g1.from_index(mapping_neighbor_id), m)
+                        };
+                        if !edge_matcher.eq(g0, g1, g0_nodes, g1_nodes) {
+                            return false;
+                        }
                     }
                 }
             }
@@ -973,8 +1085,6 @@ where
     G0: IntoNeighborsUnirected + NodeIndexable,
     G1: IntoNeighborsUnirected + NodeIndexable + NodeCount,
 {
-    let n_idx = g0.to_index(n);
-    let m_idx = g1.to_index(m);
     // Second, check all neighbors of n which is in the Rinout and Rnew, and ensure the number of
     // each neighbor is less than m.
     let mut label_in_out_tmp = vec![0; max_label + 1];
@@ -991,8 +1101,9 @@ where
         }
     }
 
-    for (label_in_out, label_num) in r_in_out[n_idx].iter() {
-        match label_in_out_tmp[*label_in_out].cmp(label_num) {
+    let n_idx = g0.to_index(n);
+    for (label, label_num) in r_in_out[n_idx].iter() {
+        match label_in_out_tmp[*label].cmp(label_num) {
             Ordering::Less => {
                 return false;
             }
@@ -1000,16 +1111,16 @@ where
                 if !subgraph {
                     return false;
                 }
-                label_in_out_tmp[*label_in_out] -= *label_num;
+                label_in_out_tmp[*label] -= *label_num;
             }
             _ => {
-                label_in_out_tmp[*label_in_out] = 0;
+                label_in_out_tmp[*label] = 0;
             }
         }
     }
 
-    for (label_new, label_num) in r_new[m_idx].iter() {
-        match label_new_tmp[*label_new].cmp(label_num) {
+    for (label, label_num) in r_new[n_idx].iter() {
+        match label_new_tmp[*label].cmp(label_num) {
             Ordering::Less => {
                 return false;
             }
@@ -1017,10 +1128,10 @@ where
                 if !subgraph {
                     return false;
                 }
-                label_new_tmp[*label_new] -= *label_num;
+                label_new_tmp[*label] -= *label_num;
             }
             _ => {
-                label_new_tmp[*label_new] = 0;
+                label_new_tmp[*label] = 0;
             }
         }
     }

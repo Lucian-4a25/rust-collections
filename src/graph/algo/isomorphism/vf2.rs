@@ -238,7 +238,7 @@ where
             mark_candidate_pair(s0, s1, nodes);
             s1_from = 0;
             stack.push(nodes);
-            // println!("mark nodes: {} {}", nodes.0, nodes.1);
+            println!("mark nodes: {} {}", nodes.0, nodes.1);
             continue;
         }
 
@@ -247,6 +247,7 @@ where
             let result = Some(s0.mapping.iter().map(|v| v.clone()).collect());
             // in case empty graph, there is no stack to pop
             if let Some(last_pair) = stack.pop() {
+                println!("unmark nodes: {} {}", last_pair.0, last_pair.1);
                 unmark_candidate_mapping(s0, s1, last_pair);
                 *last_from = Some(last_pair.1 + 1);
             }

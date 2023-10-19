@@ -1,5 +1,7 @@
 use rust_collections::graph::algo::isomorphism::{
     is_isomorphism_matching, is_isomorphism_semantic_matching, isomorphism_semantic_matching_iter,
+    vf2pp_is_isomorphism_matching, vf2pp_is_isomorphism_semantic_matching,
+    vf2pp_isomorphism_semantic_matching_iter,
 };
 use rust_collections::graph::graph_adjacency_list::Graph;
 use rust_collections::graph::{Directed, GraphType, UnDirected};
@@ -268,6 +270,7 @@ fn petersen_iso() {
     */
 
     assert!(is_isomorphism_matching(&peta, &petb, false));
+    assert!(vf2pp_is_isomorphism_matching(&peta, &petb, false));
 }
 
 #[test]
@@ -278,6 +281,7 @@ fn petersen_undir_iso() {
     let petb = str_to_digraph(PETERSEN_B);
 
     assert!(is_isomorphism_matching(&peta, &petb, false));
+    assert!(vf2pp_is_isomorphism_matching(&peta, &petb, false));
 }
 
 #[test]
@@ -286,6 +290,8 @@ fn full_iso() {
     let b = str_to_graph(FULL_B);
 
     assert!(is_isomorphism_matching(&a, &b, false));
+
+    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -295,6 +301,7 @@ fn praust_dir_no_iso() {
     let b = str_to_digraph(PRAUST_B);
 
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -304,6 +311,7 @@ fn praust_undir_no_iso() {
     let b = str_to_graph(PRAUST_B);
 
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -312,6 +320,7 @@ fn coxeter_di_iso() {
     let a = str_to_digraph(COXETER_A);
     let b = str_to_digraph(COXETER_B);
     assert!(is_isomorphism_matching(&a, &b, false));
+    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -320,6 +329,7 @@ fn coxeter_undi_iso() {
     let a = str_to_graph(COXETER_A);
     let b = str_to_graph(COXETER_B);
     assert!(is_isomorphism_matching(&a, &b, false));
+    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -327,6 +337,7 @@ fn g14_dir_not_iso() {
     let a = str_to_digraph(G1D);
     let b = str_to_digraph(G4D);
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -334,6 +345,7 @@ fn g14_undir_not_iso() {
     let a = str_to_digraph(G1U);
     let b = str_to_digraph(G4U);
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -341,6 +353,7 @@ fn g12_undir_iso() {
     let a = str_to_digraph(G1U);
     let b = str_to_digraph(G2U);
     assert!(is_isomorphism_matching(&a, &b, false));
+    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -348,6 +361,7 @@ fn g3_not_iso() {
     let a = str_to_digraph(G3_1);
     let b = str_to_digraph(G3_2);
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -357,6 +371,7 @@ fn g8_not_iso() {
     assert_eq!(a.edge_count(), b.edge_count());
     assert_eq!(a.node_count(), b.node_count());
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -366,6 +381,7 @@ fn s12_not_iso() {
     assert_eq!(a.edge_count(), b.edge_count());
     assert_eq!(a.node_count(), b.node_count());
     assert!(!is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -373,22 +389,29 @@ fn iso1() {
     let mut g0 = Graph::<_, ()>::new();
     let mut g1 = Graph::<_, ()>::new();
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 
     // very simple cases
     let a0 = g0.add_node(0);
     let a1 = g1.add_node(0);
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     let b0 = g0.add_node(1);
     let b1 = g1.add_node(1);
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     let _ = g0.add_node(2);
     assert!(!is_isomorphism_matching(&g0, &g1, false));
+    assert!(!vf2pp_is_isomorphism_matching(&g0, &g1, false));
     let _ = g1.add_node(2);
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     g0.add_edge(a0, b0, ());
     assert!(!is_isomorphism_matching(&g0, &g1, false));
+    assert!(!vf2pp_is_isomorphism_matching(&g0, &g1, false));
     g1.add_edge(a1, b1, ());
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 
 #[test]
@@ -405,6 +428,7 @@ fn iso2() {
     g0.add_edge(a0, b0, ());
     g1.add_edge(c1, b1, ());
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     // a -> b
     // a -> c
     // vs.
@@ -413,6 +437,7 @@ fn iso2() {
     g0.add_edge(a0, c0, ());
     g1.add_edge(c1, a1, ());
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 
     // add
     // b -> c
@@ -422,11 +447,13 @@ fn iso2() {
     let _ = g0.add_edge(b0, c0, ());
     let _ = g1.add_edge(b1, a1, ());
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     let d0 = g0.add_node(3);
     let d1 = g1.add_node(3);
     let e0 = g0.add_node(4);
     let e1 = g1.add_node(4);
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
     // add
     // b -> e -> d
     // vs
@@ -436,6 +463,7 @@ fn iso2() {
     g1.add_edge(b1, d1, ());
     g1.add_edge(d1, e1, ());
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 
 #[test]
@@ -451,9 +479,24 @@ fn iso_matching() {
         |x, y| x == y,
         false,
     ));
+    assert!(!vf2pp_is_isomorphism_semantic_matching(
+        &g0,
+        &g1,
+        |x, y| x == y,
+        |x, y| x == y,
+        false,
+    ));
+
     let mut g2 = g0.clone();
     *g2.edge_weight_mut(1).unwrap() = 0;
     assert!(!is_isomorphism_semantic_matching(
+        &g0,
+        &g2,
+        |x, y| x == y,
+        |x, y| x == y,
+        false
+    ));
+    assert!(!vf2pp_is_isomorphism_semantic_matching(
         &g0,
         &g2,
         |x, y| x == y,
@@ -467,6 +510,7 @@ fn iso_100n_100e() {
     let g0 = str_to_digraph(include_str!("res/graph_100n_100e.txt"));
     let g1 = str_to_digraph(include_str!("res/graph_100n_100e_iso.txt"));
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 
 #[test]
@@ -475,6 +519,7 @@ fn iso_large() {
     let g0 = graph_from_file("tests/algo/res/graph_1000n_1000e.txt");
     let g1 = graph_from_file("tests/algo/res/graph_1000n_1000e.txt");
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 
 // isomorphism isn't correct for multigraphs.
@@ -486,6 +531,7 @@ fn iso_multigraph_failure() {
 
     let g1 = Graph::<(), ()>::from_edges([(0, 0), (0, 1), (0, 1), (1, 1), (1, 0), (1, 0)]);
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 
 #[test]
@@ -495,6 +541,8 @@ fn iso_subgraph() {
     let g1 = Graph::<(), ()>::from_edges([(0, 1), (1, 2), (2, 0), (2, 3), (0, 4)]);
     assert!(!is_isomorphism_matching(&g0, &g1, false));
     assert!(is_isomorphism_matching(&g0, &g1, true));
+    assert!(!vf2pp_is_isomorphism_matching(&g0, &g1, false));
+    assert!(vf2pp_is_isomorphism_matching(&g0, &g1, true));
 }
 
 #[test]
@@ -509,10 +557,15 @@ fn iter_subgraph() {
 
     let mappings =
         isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true).unwrap();
+    let mapping_2 =
+        vf2pp_isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true);
 
     // Verify the iterator returns the expected mappings
     let expected_mappings: Vec<Vec<usize>> = vec![vec![0, 1, 2], vec![1, 2, 0], vec![2, 0, 1]];
     for mapping in mappings {
+        assert!(expected_mappings.contains(&mapping))
+    }
+    for mapping in mapping_2 {
         assert!(expected_mappings.contains(&mapping))
     }
 
@@ -528,6 +581,10 @@ fn iter_subgraph() {
             .unwrap()
             .all(|x| unique.insert(x))
     );
+    assert!(
+        vf2pp_isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true)
+            .all(|x| unique.insert(x))
+    );
 
     // The iterator should return None for graphs that are not isomorphic
     let a = str_to_digraph(G8_1);
@@ -538,6 +595,11 @@ fn iter_subgraph() {
     assert!(
         isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true)
             .unwrap()
+            .next()
+            .is_none()
+    );
+    assert!(
+        vf2pp_isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true)
             .next()
             .is_none()
     );
@@ -562,6 +624,11 @@ fn iter_subgraph() {
     assert_eq!(
         isomorphism_semantic_matching_iter(&sub, &g, node_match, edge_match, true)
             .unwrap()
+            .collect::<Vec<_>>(),
+        vec![vec![2, 3]]
+    );
+    assert_eq!(
+        vf2pp_isomorphism_semantic_matching_iter(&sub, &g, node_match, edge_match, true)
             .collect::<Vec<_>>(),
         vec![vec![2, 3]]
     );
