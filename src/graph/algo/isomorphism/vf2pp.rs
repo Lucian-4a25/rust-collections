@@ -391,12 +391,6 @@ where
                     }
                 }
 
-                // for inner_node in g.node_identifiers() {
-                //     let inner_node_id = g.to_index(inner_node);
-                //     if added[inner_node_id] {
-                //         continue;
-                //     }
-                // }
                 bfs_search_ordering(
                     g,
                     root_node_id,
@@ -712,99 +706,6 @@ where
         }
     }
 }
-
-/// check if g0 is isomorphic with g1
-/// `label` function is used to get label from Graph Node
-/// node_matcher and edge_matcher are both optional for matching
-// pub fn vf2pp_isomorphsim_label_semantic_matching<G0, G1, F0, F1, NM, EM>(
-//     g0: G0,
-//     g1: G1,
-//     label0: F0,
-//     label1: F1,
-//     node_matcher: NM,
-//     edge_matcher: EM,
-//     match_subgraph: bool,
-// ) -> bool
-// where
-//     G0: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     G1: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     F0: FnMut(G0::NodeWeight) -> usize,
-//     F1: FnMut(G1::NodeWeight) -> usize,
-//     NM: FnMut(G0::NodeWeight, G1::NodeWeight) -> bool,
-//     EM: FnMut(G0::EdgeWeight, G1::EdgeWeight) -> bool,
-// {
-//     let vf2pp = VF2PP::new(g0, g1, label0, label1);
-//     let mut matcher = IsomorphismMatcher::new(vf2pp, node_matcher, edge_matcher, match_subgraph);
-//     matcher.next().is_some()
-// }
-
-// /// matching using semantice matching without label
-// pub fn vf2pp_isomorphsim_semantic_matching<G0, G1, NM, EM>(
-//     g0: G0,
-//     g1: G1,
-//     node_matcher: NM,
-//     edge_matcher: EM,
-//     match_subgraph: bool,
-// ) -> bool
-// where
-//     G0: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     G1: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     NM: FnMut(G0::NodeWeight, G1::NodeWeight) -> bool,
-//     EM: FnMut(G0::EdgeWeight, G1::EdgeWeight) -> bool,
-// {
-//     let vf2pp = VF2PP::new(g0, g1, NoNodeLabel, NoNodeLabel);
-//     let mut matcher = IsomorphismMatcher::new(vf2pp, node_matcher, edge_matcher, match_subgraph);
-//     matcher.next().is_some()
-// }
-
-// pub fn vf2pp_isomorphsim_label_matching<G0, G1, F0, F1>(
-//     g0: G0,
-//     g1: G1,
-//     label0: F0,
-//     label1: F1,
-//     match_subgraph: bool,
-// ) -> bool
-// where
-//     G0: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     G1: IntoNeighborsDirected
-//         + IntoEdgeDirected
-//         + IntoNodeIdentifiers
-//         + NodeIndexable
-//         + NodeCount
-//         + GraphDataAccess,
-//     F0: FnMut(G0::NodeWeight) -> usize,
-//     F1: FnMut(G1::NodeWeight) -> usize,
-// {
-//     let vf2pp = VF2PP::new(g0, g1, NoNodeLabel, NoNodeLabel);
-//     let mut matcher =
-//         IsomorphismMatcher::new(vf2pp, NoSemanticMatch, NoSemanticMatch, match_subgraph);
-//     matcher.next().is_some()
-// }
 
 /// match according the ordering of g0, this should be a pure function so that it could be reused
 fn isomorphism_match<'a, G0, G1, NM, EM>(
