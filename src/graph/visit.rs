@@ -32,6 +32,12 @@ pub trait IntoNeighborsDirected: IntoNeiborghbors {
     fn neighbors_directed(self, n: Self::NodeId, d: Direction) -> Self::NeighborsDirected;
 }
 
+pub trait IntoNeighborsUnirected: IntoNeiborghbors {
+    type NeighborsUndirected: Iterator<Item = Self::NodeId>;
+
+    fn neighbors_undirected(self, n: Self::NodeId) -> Self::NeighborsUndirected;
+}
+
 /// Definition of a Edge ref
 pub trait EdgeRef: Copy {
     type NodeId;

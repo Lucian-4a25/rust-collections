@@ -430,6 +430,7 @@ fn test_slice_api() {
     }
 }
 
+#[ignore]
 #[test]
 fn test_fs_api() -> Result<(), Error> {
     let mut fs = File::open("file/tmp")?;

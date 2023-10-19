@@ -1,7 +1,7 @@
 use super::visit::{
     EdgeRef, GetAdjacencyMatrix, GraphBase, GraphData, GraphDataAccess, GraphProp, GraphRef,
-    IntoEdgeDirected, IntoEdgeReferences, IntoEdges, IntoNeighborsDirected, IntoNodeIdentifiers,
-    NodeCount, NodeIndexable, Visitable,
+    IntoEdgeDirected, IntoEdgeReferences, IntoEdges, IntoNeighborsDirected, IntoNeighborsUnirected,
+    IntoNodeIdentifiers, NodeCount, NodeIndexable, Visitable,
 };
 use super::{Directed, Direction, GraphType, IntoWeightedEdge, UnDirected};
 use crate::graph::visit::IntoNeiborghbors;
@@ -488,6 +488,10 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
     }
 
     /// get a node's all neighbors, which has a related edge with it.
+    ///
+    /// Directed: All neighbors from node_idx
+    ///
+    /// UnDirected: All neighbors from or to node_idx
     pub fn neighbors<'a>(&'a self, node_idx: usize) -> Neighbors<'a, E> {
         let target_node = self.nodes.get(node_idx);
         let (edge_out, edge_in) = if let Some(node) = target_node {
@@ -511,12 +515,20 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
     }
 
     /// get a node's all neighbors according to a direction
+    /// Directed: all neighbors to or from `node_idx`
+    /// Undirected:
+    ///     Outcoming: all neighbors from node_idx
+    ///     Incoming: all neighbors to node_idx
     pub fn neigobors_directed<'a>(&'a self, node_idx: usize, d: Direction) -> Neighbors<'a, E> {
         let target_node = self.nodes.get(node_idx);
         let (edge_out, edge_in) = if let Some(node) = target_node {
-            match d {
-                Direction::Incoming => (usize::MAX, node.next[1]),
-                Direction::Outcoming => (node.next[0], usize::MAX),
+            if Self::is_directed(self) {
+                match d {
+                    Direction::Incoming => (usize::MAX, node.next[1]),
+                    Direction::Outcoming => (node.next[0], usize::MAX),
+                }
+            } else {
+                (node.next[0], node.next[1])
             }
         } else {
             (usize::MAX, usize::MAX)
@@ -530,7 +542,7 @@ impl<N, E, T: GraphType> Graph<N, E, T> {
     }
 
     /// get a node's all neighbors according to a direction
-    pub fn neigobors_undirected<'a>(&'a self, node_idx: usize) -> Neighbors<'a, E> {
+    pub fn neighbors_undirected<'a>(&'a self, node_idx: usize) -> Neighbors<'a, E> {
         let target_node = self.nodes.get(node_idx);
         let (edge_out, edge_in) = if let Some(node) = target_node {
             (node.next[0], node.next[1])
@@ -857,6 +869,14 @@ impl<'a, N, E, T: GraphType> IntoNeighborsDirected for &'a Graph<N, E, T> {
 
     fn neighbors_directed(self, n: Self::NodeId, d: Direction) -> Self::NeighborsDirected {
         Graph::neigobors_directed(self, n, d)
+    }
+}
+
+impl<'a, N, E, T: GraphType> IntoNeighborsUnirected for &'a Graph<N, E, T> {
+    type NeighborsUndirected = Neighbors<'a, E>;
+
+    fn neighbors_undirected(self, n: Self::NodeId) -> Self::NeighborsUndirected {
+        Graph::neighbors_undirected(self, n)
     }
 }
 
@@ -1215,7 +1235,7 @@ mod graph_api {
         assert_eq!(counter, 3);
 
         // neigobors_undirected
-        let iter = graph.neigobors_undirected(3).enumerate();
+        let iter = graph.neighbors_undirected(3).enumerate();
         let mut counter = 0;
         for (offset, neighbor_id) in iter {
             assert_eq!(

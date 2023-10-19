@@ -18,7 +18,7 @@ impl GraphType for UnDirected {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Direction {
     Outcoming,
     Incoming,
