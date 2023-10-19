@@ -510,6 +510,7 @@ fn iso_100n_100e() {
     let g0 = str_to_digraph(include_str!("res/graph_100n_100e.txt"));
     let g1 = str_to_digraph(include_str!("res/graph_100n_100e_iso.txt"));
     assert!(is_isomorphism_matching(&g0, &g1, false));
+    println!("-------------------");
     assert!(vf2pp_is_isomorphism_matching(&g0, &g1, false));
 }
 

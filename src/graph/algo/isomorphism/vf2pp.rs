@@ -7,7 +7,11 @@ use crate::graph::visit::{
     IntoNeighborsUnirected, IntoNodeIdentifiers, NodeCount, NodeIndexable,
 };
 use crate::graph::Direction::{Incoming, Outcoming};
-use std::{cmp::Ordering, collections::BinaryHeap, marker::PhantomData};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, VecDeque},
+    marker::PhantomData,
+};
 
 const NOT_IN_MAPPING: usize = usize::MAX;
 const G0_CON_IN_MAPPING: usize = usize::MAX;
@@ -324,7 +328,12 @@ where
     /// initilize the ordering of g0, the `label_tmp[i]` mean the number of nodes with same label `i`
     fn init_matching_ordering<G>(g: G, node_labels: &Vec<usize>, max_label: usize) -> Vec<usize>
     where
-        G: IntoNeighborsDirected + IntoNodeIdentifiers + NodeCount + NodeIndexable + GraphProp,
+        G: IntoNeighborsDirected
+            + IntoNeighborsUnirected
+            + IntoNodeIdentifiers
+            + NodeCount
+            + NodeIndexable
+            + GraphProp,
     {
         let node_count = g.node_count();
         let mut matching_order = vec![0; node_count];
@@ -352,30 +361,45 @@ where
         for node in g.node_identifiers() {
             let node_id = g.to_index(node);
             if !added[node_id] {
-                let mut min_node_id = node_id;
                 // select a root node for bfs search ordering
-                for inner_node in g.node_identifiers() {
-                    let inner_node_id = g.to_index(inner_node);
-                    if added[inner_node_id] {
-                        continue;
-                    }
-                    match node_label_num[node_labels[inner_node_id]]
-                        .cmp(&node_label_num[node_labels[inner_node_id]])
-                    {
-                        Ordering::Less => {
-                            min_node_id = inner_node_id;
-                        }
-                        Ordering::Equal => {
-                            if node_con_num[inner_node_id] > node_con_num[min_node_id] {
-                                min_node_id = inner_node_id;
+                let mut root_node_id = node_id;
+                let mut neighbor_visited = vec![false; node_count];
+                let mut queue = Vec::new();
+                queue.push(root_node_id);
+                neighbor_visited[root_node_id] = true;
+
+                while let Some(cluster_node_id) = queue.pop() {
+                    for neighbor in g.neighbors_undirected(g.from_index(cluster_node_id)) {
+                        let neighbor_id = g.to_index(neighbor);
+                        if !neighbor_visited[neighbor_id] {
+                            queue.push(neighbor_id);
+                            match node_label_num[node_labels[neighbor_id]]
+                                .cmp(&node_label_num[node_labels[neighbor_id]])
+                            {
+                                Ordering::Less => {
+                                    root_node_id = neighbor_id;
+                                }
+                                Ordering::Equal => {
+                                    if node_con_num[neighbor_id] > node_con_num[root_node_id] {
+                                        root_node_id = neighbor_id;
+                                    }
+                                }
+                                Ordering::Greater => {}
                             }
+                            neighbor_visited[neighbor_id] = true;
                         }
-                        Ordering::Greater => {}
                     }
                 }
+
+                // for inner_node in g.node_identifiers() {
+                //     let inner_node_id = g.to_index(inner_node);
+                //     if added[inner_node_id] {
+                //         continue;
+                //     }
+                // }
                 bfs_search_ordering(
                     g,
-                    min_node_id,
+                    root_node_id,
                     &mut order_idx,
                     &mut added,
                     &mut matching_order,
@@ -435,7 +459,7 @@ where
             node_labels: &Vec<usize>,
             label_nums: &mut Vec<usize>,
         ) where
-            G: IntoNeighborsDirected + NodeIndexable + NodeCount,
+            G: IntoNeighborsUnirected + NodeIndexable + NodeCount,
         {
             let mut cur_order = *order_idx;
             let (mut start_of_layer, mut end_of_layer, mut last_added_pos) =
@@ -448,7 +472,7 @@ where
                 // add all current layer's nodes
                 for order in start_of_layer..end_of_layer + 1 {
                     let cur_node_idx = matching_order[order];
-                    for neighbor in g.neighbors(g.from_index(cur_node_idx)) {
+                    for neighbor in g.neighbors_undirected(g.from_index(cur_node_idx)) {
                         let neighbor_id = g.to_index(neighbor);
                         bfs_tree_node_cons[neighbor_id] += 1;
                         if !added[neighbor_id] {
@@ -816,7 +840,11 @@ where
         let cur_depth = *depth;
         // a matched resutl found
         if cur_depth == order.len() {
-            *depth -= 1;
+            if cur_depth > 0 {
+                *depth -= 1;
+            } else {
+                *depth = usize::MAX;
+            }
             return Some(mapping.iter().map(|v| v.clone()).collect());
         }
         let n = order[cur_depth];
@@ -833,7 +861,7 @@ where
                 if neighbor_mapping_in_g1 != NOT_IN_MAPPING {
                     has_mapping_neighbor = true;
                     g1_candidate_nodes_iter.push(Box::new(
-                        g1.neighbors(g1.from_index(neighbor_mapping_in_g1)),
+                        g1.neighbors_undirected(g1.from_index(neighbor_mapping_in_g1)),
                     ));
                     break;
                 }
@@ -981,6 +1009,7 @@ where
     // them exist in m, and check the number of connections for same neighbor in n is less than m.
     let mut g1_mapping_out_tmp = vec![0usize; g1.node_count()];
     let mut g1_mapping_in_tmp = vec![0usize; g1.node_count()];
+    let mut g1_mapping_self = 0usize;
 
     for d in [Outcoming, Incoming] {
         if !g1.is_directed() && d == Incoming {
@@ -995,6 +1024,8 @@ where
             let neighrbor_id = g1.to_index(neighbor);
             if g1_node_cons[neighrbor_id] == G1_CON_IN_MAPPING {
                 g1_mapping[neighrbor_id] += 1;
+            } else if neighrbor_id == m_idx {
+                g1_mapping_self += 1;
             }
         }
     }
@@ -1033,11 +1064,22 @@ where
                         }
                     }
                 }
+            } else if neighbor_id == n_idx {
+                if g1_mapping_self == 0
+                    || edge_matcher_enabled && !edge_matcher.eq(g0, g1, (n, n), (m, m))
+                {
+                    return false;
+                }
+                g1_mapping_self -= 1;
             }
         }
     }
 
     // for induced subgraph or isomorphism, the mapping must match exactly
+    if g1_mapping_self != 0 {
+        return false;
+    }
+
     for d in [Outcoming, Incoming] {
         if !g1.is_directed() && d == Incoming {
             break;
