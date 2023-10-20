@@ -247,7 +247,6 @@ where
             let result = Some(s0.mapping.iter().map(|v| v.clone()).collect());
             // in case empty graph, there is no stack to pop
             if let Some(last_pair) = stack.pop() {
-                println!("unmark nodes: {} {}", last_pair.0, last_pair.1);
                 unmark_candidate_mapping(s0, s1, last_pair);
                 *last_from = Some(last_pair.1 + 1);
             }
@@ -256,7 +255,7 @@ where
 
         // pop last node mapping pair, and pick the node pair from last position
         if let Some(last_nodes_pair) = stack.pop() {
-            // println!("unmark nodes: {} {}", last_nodes_pair.0, last_nodes_pair.1);
+            println!("unmark nodes: {} {}", last_nodes_pair.0, last_nodes_pair.1);
             unmark_candidate_mapping(s0, s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
             // last_nodes_pair.1 + 1

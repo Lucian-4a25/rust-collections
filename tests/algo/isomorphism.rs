@@ -4,7 +4,8 @@ use rust_collections::graph::algo::isomorphism::{
     vf2pp_isomorphism_semantic_matching_iter,
 };
 use rust_collections::graph::graph_adjacency_list::Graph;
-use rust_collections::graph::{Directed, GraphType, UnDirected};
+use rust_collections::graph::visit::IntoNeighborsDirected;
+use rust_collections::graph::{Directed, Direction, GraphType, UnDirected};
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::prelude::*;
@@ -290,7 +291,7 @@ fn full_iso() {
     let b = str_to_graph(FULL_B);
 
     assert!(is_isomorphism_matching(&a, &b, false));
-
+    println!("----------------------");
     assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
@@ -301,7 +302,7 @@ fn praust_dir_no_iso() {
     let b = str_to_digraph(PRAUST_B);
 
     assert!(!is_isomorphism_matching(&a, &b, false));
-    assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
+    assert!(!vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
 #[test]
@@ -547,7 +548,7 @@ fn iso_subgraph() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore = "Takes too long to run in Miri")]
+// #[cfg_attr(miri, ignore = "Takes too long to run in Miri")]
 fn iter_subgraph() {
     let a = Graph::<(), ()>::from_edges([(0, 1), (1, 2), (2, 0)]);
     let b = Graph::<(), ()>::from_edges([(0, 1), (1, 2), (2, 0), (2, 3), (0, 4)]);
@@ -580,11 +581,12 @@ fn iter_subgraph() {
     assert!(
         isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true)
             .unwrap()
-            .all(|x| unique.insert(x))
+            .all(|x| { unique.insert(x) })
     );
+    let mut unique2 = HashSet::new();
     assert!(
         vf2pp_isomorphism_semantic_matching_iter(a_ref, b_ref, node_match, edge_match, true)
-            .all(|x| unique.insert(x))
+            .all(|x| { unique2.insert(x) })
     );
 
     // The iterator should return None for graphs that are not isomorphic

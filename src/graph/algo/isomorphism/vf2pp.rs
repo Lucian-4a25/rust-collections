@@ -9,7 +9,7 @@ use crate::graph::visit::{
 use crate::graph::Direction::{Incoming, Outcoming};
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, VecDeque},
+    collections::{BinaryHeap, HashSet},
     marker::PhantomData,
 };
 
@@ -188,10 +188,6 @@ where
         )
         .is_some()
     }
-
-    // pub fn match_iter(self) -> impl Iterator<Item = Vec<usize>> + 'a {
-
-    // }
 }
 
 impl<'a, G0, G1, NM, EM> Iterator for IsomorphismMatcher<'a, G0, G1, NM, EM>
@@ -336,7 +332,7 @@ where
             + GraphProp,
     {
         let node_count = g.node_count();
-        let mut matching_order = vec![0; node_count];
+        let mut matching_order = vec![usize::MAX; node_count];
         let mut added = vec![false; node_count];
         let mut node_con_num = vec![0; node_count];
         let mut node_label_num = vec![0usize; max_label + 1];
@@ -358,51 +354,45 @@ where
 
         let mut order_idx = 0usize;
         // We need to choose all possible root nodes, then do BFS search using the choosen node as root node
-        for node in g.node_identifiers() {
-            let node_id = g.to_index(node);
-            if !added[node_id] {
-                // select a root node for bfs search ordering
-                let mut root_node_id = node_id;
-                let mut neighbor_visited = vec![false; node_count];
-                let mut queue = Vec::new();
-                queue.push(root_node_id);
-                neighbor_visited[root_node_id] = true;
-
-                while let Some(cluster_node_id) = queue.pop() {
-                    for neighbor in g.neighbors_undirected(g.from_index(cluster_node_id)) {
-                        let neighbor_id = g.to_index(neighbor);
-                        if !neighbor_visited[neighbor_id] {
-                            queue.push(neighbor_id);
-                            match node_label_num[node_labels[neighbor_id]]
-                                .cmp(&node_label_num[node_labels[neighbor_id]])
-                            {
-                                Ordering::Less => {
-                                    root_node_id = neighbor_id;
-                                }
-                                Ordering::Equal => {
-                                    if node_con_num[neighbor_id] > node_con_num[root_node_id] {
-                                        root_node_id = neighbor_id;
-                                    }
-                                }
-                                Ordering::Greater => {}
+        while order_idx < node_count {
+            // select a root node for bfs search ordering
+            for node in g.node_identifiers() {
+                let node_id = g.to_index(node);
+                let mut root_node_id = usize::MAX;
+                if !added[node_id] {
+                    if root_node_id == usize::MAX {
+                        root_node_id = node_id;
+                    } else {
+                        match node_label_num[node_labels[node_id]]
+                            .cmp(&node_label_num[node_labels[root_node_id]])
+                        {
+                            Ordering::Less => {
+                                root_node_id = node_id;
                             }
-                            neighbor_visited[neighbor_id] = true;
+                            Ordering::Equal => {
+                                if node_con_num[node_id] > node_con_num[root_node_id] {
+                                    root_node_id = node_id;
+                                }
+                            }
+                            Ordering::Greater => {}
                         }
                     }
-                }
 
-                bfs_search_ordering(
-                    g,
-                    root_node_id,
-                    &mut order_idx,
-                    &mut added,
-                    &mut matching_order,
-                    &node_con_num,
-                    node_labels,
-                    &mut node_label_num,
-                );
+                    bfs_search_ordering(
+                        g,
+                        root_node_id,
+                        &mut order_idx,
+                        &mut added,
+                        &mut matching_order,
+                        &node_con_num,
+                        node_labels,
+                        &mut node_label_num,
+                    );
+                }
             }
         }
+
+        debug_assert!(!matching_order.iter().any(|&v| v == usize::MAX));
 
         struct BfsLayerNode {
             node_idx: usize,
@@ -535,7 +525,10 @@ where
             for neighbor in g.neighbors_undirected(g.from_index(cur_node_idx)) {
                 let neighbor_id = g.to_index(neighbor);
                 let neighbor_cons = g0_node_cons[neighbor_id];
-                if neighbor_cons != G0_CON_IN_MAPPING && neighbor_cons > 0 {
+                if neighbor_cons == G0_CON_IN_MAPPING || neighbor_id == cur_node_idx {
+                    continue;
+                }
+                if neighbor_cons > 0 {
                     label_in_out_tmp[node_labels[neighbor_id]] += 1;
                 } else if neighbor_cons == 0 {
                     label_new_tmp[node_labels[neighbor_id]] += 1;
@@ -543,7 +536,8 @@ where
             }
 
             for neighbor in g.neighbors_undirected(g.from_index(cur_node_idx)) {
-                let neighbor_label = node_labels[g.to_index(neighbor)];
+                let neighbor_idx = g.to_index(neighbor);
+                let neighbor_label = node_labels[neighbor_idx];
                 if label_in_out_tmp[neighbor_label] > 0 {
                     r_in_out[cur_node_idx].push((neighbor_label, label_in_out_tmp[neighbor_label]));
                     label_in_out_tmp[neighbor_label] = 0;
@@ -554,8 +548,8 @@ where
                 }
 
                 // mark the unvisited neighbor nodes of current node as visited
-                if g0_node_cons[g.to_index(neighbor)] != G0_CON_IN_MAPPING {
-                    g0_node_cons[g.to_index(neighbor)] += 1;
+                if g0_node_cons[neighbor_idx] != G0_CON_IN_MAPPING && neighbor_idx != cur_node_idx {
+                    g0_node_cons[neighbor_idx] += 1;
                 }
             }
 
@@ -739,17 +733,27 @@ where
 {
     'outer: while *depth != usize::MAX {
         let cur_depth = *depth;
+
         // a matched resutl found
         if cur_depth == order.len() {
+            let result = mapping.iter().map(|v| v.clone()).collect();
             if cur_depth > 0 {
-                *depth -= 1;
+                unmark_node_pair(
+                    depth,
+                    order,
+                    mapping,
+                    g1_candidate_nodes_iter,
+                    g1_node_cons,
+                    g1,
+                    true,
+                );
             } else {
                 *depth = usize::MAX;
             }
-            return Some(mapping.iter().map(|v| v.clone()).collect());
+            return Some(result);
         }
-        let n = order[cur_depth];
 
+        let n = order[cur_depth];
         // There are two possible cases:
         // 1. we need to find a fresh candidate in this depth
         // 2. we need to find a candidate from `g1_candidates_nodes_iter`, and forward based previous position
@@ -757,14 +761,30 @@ where
             debug_assert!(cur_depth == g1_candidate_nodes_iter.len());
             // it's a fresh start, we first need to check the neighbor of n
             let mut has_mapping_neighbor = false;
-            for neighbor in g0.neighbors_undirected(g0.from_index(n)) {
-                let neighbor_mapping_in_g1 = mapping[g0.to_index(neighbor)];
-                if neighbor_mapping_in_g1 != NOT_IN_MAPPING {
-                    has_mapping_neighbor = true;
-                    g1_candidate_nodes_iter.push(Box::new(
-                        g1.neighbors_undirected(g1.from_index(neighbor_mapping_in_g1)),
-                    ));
+            'neighbor: for d in [Outcoming, Incoming] {
+                if !g0.is_directed() && d == Incoming {
                     break;
+                }
+                for neighbor in g0.neighbors_directed(g0.from_index(n), d) {
+                    let neighbor_mapping_in_g1 = mapping[g0.to_index(neighbor)];
+                    if neighbor_mapping_in_g1 != NOT_IN_MAPPING {
+                        has_mapping_neighbor = true;
+                        let reverse_dir = if d == Outcoming { Incoming } else { Outcoming };
+                        let iter = g1
+                            .neighbors_directed(g1.from_index(neighbor_mapping_in_g1), reverse_dir);
+                        let mut visited: HashSet<usize> = HashSet::new();
+
+                        g1_candidate_nodes_iter.push(Box::new(iter.filter(move |&node_id| {
+                            let node_idx = g1.to_index(node_id);
+                            if !visited.contains(&node_idx) {
+                                visited.insert(node_idx);
+                                true
+                            } else {
+                                false
+                            }
+                        })));
+                        break 'neighbor;
+                    }
                 }
             }
 
@@ -776,6 +796,7 @@ where
         let cur_g1_iter = g1_candidate_nodes_iter.last_mut().unwrap();
         while let Some(m_id) = cur_g1_iter.next() {
             let m = g1.to_index(m_id);
+            // TODO: we could do more when we have root node information
             if g1_node_cons[m] != G1_CON_IN_MAPPING
                 && check_feasibility(
                     g0.from_index(n),
@@ -794,18 +815,19 @@ where
                     subgraph,
                 )
             {
-                mark_candidate_pair(n, m, depth, mapping, g1_node_cons, g1);
+                mark_node_pair(n, m, depth, mapping, g1_node_cons, g1);
                 continue 'outer;
             }
         }
         // no matching found, go backward
-        unmark_candidate_pair(
+        unmark_node_pair(
             depth,
             order,
             mapping,
             g1_candidate_nodes_iter,
             g1_node_cons,
             g1,
+            false,
         );
     }
 
@@ -813,7 +835,7 @@ where
 }
 
 #[inline]
-fn mark_candidate_pair<G>(
+fn mark_node_pair<G>(
     n: usize,
     m: usize,
     depth: &mut usize,
@@ -836,13 +858,14 @@ fn mark_candidate_pair<G>(
 }
 
 #[inline]
-fn unmark_candidate_pair<'a, G>(
+fn unmark_node_pair<'a, G>(
     depth: &mut usize,
     matching_order: &Vec<usize>,
     mapping: &mut Vec<usize>,
     g1_candidate_nodes_iter: &mut Vec<Box<dyn Iterator<Item = G::NodeId> + 'a>>,
     g1_node_cons: &mut Vec<usize>,
     g1: G,
+    is_last: bool,
 ) where
     G: IntoNeighborsUnirected + NodeIndexable,
 {
@@ -857,15 +880,17 @@ fn unmark_candidate_pair<'a, G>(
     println!("unmark node pair: {} {}", n, m);
     mapping[n] = NOT_IN_MAPPING;
     g1_node_cons[m] = 0;
-    g1_candidate_nodes_iter.pop();
     for neighbor in g1.neighbors_undirected(g1.from_index(m)) {
         let neighbor_id = g1.to_index(neighbor);
         let neighbor_con = g1_node_cons[neighbor_id];
-        if neighbor_con != G1_CON_IN_MAPPING && neighbor_con > 0 {
+        if neighbor_con != G1_CON_IN_MAPPING && neighbor_id != m {
             g1_node_cons[neighbor_id] -= 1;
         } else if neighbor_con == G1_CON_IN_MAPPING {
             g1_node_cons[m] += 1;
         }
+    }
+    if !is_last {
+        g1_candidate_nodes_iter.pop();
     }
 }
 
@@ -912,6 +937,11 @@ where
     let mut g1_mapping_in_tmp = vec![0usize; g1.node_count()];
     let mut g1_mapping_self = 0usize;
 
+    // check all neighbors of n which is in the Rinout and Rnew, and ensure the number of
+    // each neighbor is less than m.
+    let mut label_in_out_tmp = vec![0usize; max_label + 1];
+    let mut label_new_tmp = vec![0usize; max_label + 1];
+
     for d in [Outcoming, Incoming] {
         if !g1.is_directed() && d == Incoming {
             break;
@@ -922,11 +952,16 @@ where
             &mut g1_mapping_in_tmp
         };
         for neighbor in g1.neighbors_directed(m, d) {
-            let neighrbor_id = g1.to_index(neighbor);
-            if g1_node_cons[neighrbor_id] == G1_CON_IN_MAPPING {
-                g1_mapping[neighrbor_id] += 1;
-            } else if neighrbor_id == m_idx {
+            let neighbor_id = g1.to_index(neighbor);
+            let neighbor_con = g1_node_cons[neighbor_id];
+            if neighbor_con == G1_CON_IN_MAPPING {
+                g1_mapping[neighbor_id] += 1;
+            } else if neighbor_id == m_idx {
                 g1_mapping_self += 1;
+            } else if neighbor_con > 0 {
+                label_in_out_tmp[g1_node_labels[neighbor_id]] += 1;
+            } else {
+                label_new_tmp[g1_node_labels[neighbor_id]] += 1;
             }
         }
     }
@@ -942,7 +977,7 @@ where
             &mut g1_mapping_in_tmp
         };
         for neighbor in g0.neighbors_directed(n, d) {
-            let neighbor_id: usize = g0.to_index(neighbor);
+            let neighbor_id = g0.to_index(neighbor);
             let mapping_neighbor_id = mapping[neighbor_id];
             if mapping_neighbor_id != NOT_IN_MAPPING {
                 if g1_mapping[mapping_neighbor_id] == 0 {
@@ -981,6 +1016,34 @@ where
         return false;
     }
 
+    // check Rinout and Rnew node labels
+    for i in [0, 1] {
+        let r = if i == 0 { r_in_out } else { r_new };
+        let label_tmp = if i == 0 {
+            &mut label_in_out_tmp
+        } else {
+            &mut label_new_tmp
+        };
+
+        for (label, label_num) in r[n_idx].iter() {
+            match label_tmp[*label].cmp(label_num) {
+                Ordering::Less => {
+                    return false;
+                }
+                Ordering::Greater => {
+                    if !subgraph {
+                        return false;
+                    }
+                    label_tmp[*label] -= *label_num;
+                }
+                _ => {
+                    label_tmp[*label] = 0;
+                }
+            }
+        }
+    }
+
+    // check label and mapping completeness
     for d in [Outcoming, Incoming] {
         if !g1.is_directed() && d == Incoming {
             break;
@@ -992,102 +1055,15 @@ where
         };
         for neighbor in g1.neighbors_directed(m, d) {
             let neighbor_id = g1.to_index(neighbor);
-            if neighbor_id != NOT_IN_MAPPING && g1_mapping[neighbor_id] != 0 {
-                return false;
-            }
-        }
-    }
-
-    check_r_in_out_new_labels(
-        n,
-        m,
-        g0,
-        g1,
-        r_in_out,
-        r_new,
-        g1_node_cons,
-        g1_node_labels,
-        max_label,
-        subgraph,
-    )
-}
-
-fn check_r_in_out_new_labels<G0, G1>(
-    n: G0::NodeId,
-    m: G1::NodeId,
-    g0: G0,
-    g1: G1,
-    r_in_out: &Vec<Vec<(usize, usize)>>,
-    r_new: &Vec<Vec<(usize, usize)>>,
-    g1_node_cons: &Vec<usize>,
-    g1_node_labels: &Vec<usize>,
-    max_label: usize,
-    subgraph: bool,
-) -> bool
-where
-    G0: IntoNeighborsUnirected + NodeIndexable,
-    G1: IntoNeighborsUnirected + NodeIndexable + NodeCount,
-{
-    // Second, check all neighbors of n which is in the Rinout and Rnew, and ensure the number of
-    // each neighbor is less than m.
-    let mut label_in_out_tmp = vec![0; max_label + 1];
-    let mut label_new_tmp = vec![0; max_label + 1];
-    for neighbor in g1.neighbors_undirected(m) {
-        let neighbor_id = g1.to_index(neighbor);
-        let neighbor_con = g1_node_cons[neighbor_id];
-        if neighbor_con != G1_CON_IN_MAPPING {
-            if neighbor_con > 0 {
-                label_in_out_tmp[g1_node_labels[neighbor_id]] += 1;
-            } else {
-                label_new_tmp[g1_node_labels[neighbor_id]] += 1;
-            }
-        }
-    }
-
-    let n_idx = g0.to_index(n);
-    for (label, label_num) in r_in_out[n_idx].iter() {
-        match label_in_out_tmp[*label].cmp(label_num) {
-            Ordering::Less => {
-                return false;
-            }
-            Ordering::Greater => {
-                if !subgraph {
-                    return false;
-                }
-                label_in_out_tmp[*label] -= *label_num;
-            }
-            _ => {
-                label_in_out_tmp[*label] = 0;
-            }
-        }
-    }
-
-    for (label, label_num) in r_new[n_idx].iter() {
-        match label_new_tmp[*label].cmp(label_num) {
-            Ordering::Less => {
-                return false;
-            }
-            Ordering::Greater => {
-                if !subgraph {
-                    return false;
-                }
-                label_new_tmp[*label] -= *label_num;
-            }
-            _ => {
-                label_new_tmp[*label] = 0;
-            }
-        }
-    }
-
-    // check completeness when match isomorphism
-    if !subgraph {
-        for neighbor in g1.neighbors_undirected(m) {
-            let neighbor_id = g1.to_index(neighbor);
             let neighbor_con = g1_node_cons[neighbor_id];
-            if neighbor_con != G1_CON_IN_MAPPING {
-                if neighbor_con > 0 && label_in_out_tmp[g1_node_labels[neighbor_id]] > 0 {
+            if neighbor_con == G1_CON_IN_MAPPING && g1_mapping[neighbor_id] != 0 {
+                return false;
+            } else if neighbor_con > 0 && !subgraph {
+                if label_in_out_tmp[g1_node_labels[neighbor_id]] > 0 {
                     return false;
-                } else if neighbor_con == 0 && label_new_tmp[g1_node_labels[neighbor_id]] > 0 {
+                }
+            } else if neighbor_con == 0 && !subgraph {
+                if label_new_tmp[g1_node_labels[neighbor_id]] > 0 {
                     return false;
                 }
             }
