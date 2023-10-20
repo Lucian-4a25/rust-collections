@@ -238,7 +238,7 @@ where
             mark_candidate_pair(s0, s1, nodes);
             s1_from = 0;
             stack.push(nodes);
-            println!("mark nodes: {} {}", nodes.0, nodes.1);
+            // println!("mark nodes: {} {}", nodes.0, nodes.1);
             continue;
         }
 
@@ -255,7 +255,7 @@ where
 
         // pop last node mapping pair, and pick the node pair from last position
         if let Some(last_nodes_pair) = stack.pop() {
-            println!("unmark nodes: {} {}", last_nodes_pair.0, last_nodes_pair.1);
+            // println!("unmark nodes: {} {}", last_nodes_pair.0, last_nodes_pair.1);
             unmark_candidate_mapping(s0, s1, last_nodes_pair);
             // continue to search the candidate for last_nodes_pair.0 in g0, start from
             // last_nodes_pair.1 + 1

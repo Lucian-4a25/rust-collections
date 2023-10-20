@@ -172,6 +172,7 @@ where
         isomorphism_match(
             self.vf2pp.g0,
             self.vf2pp.g1,
+            &self.vf2pp.roots,
             &self.vf2pp.matching_order,
             &mut self.mapping,
             &self.vf2pp.r_in_out,
@@ -217,6 +218,7 @@ where
         isomorphism_match(
             self.vf2pp.g0,
             self.vf2pp.g1,
+            &self.vf2pp.roots,
             &self.vf2pp.matching_order,
             &mut self.mapping,
             &self.vf2pp.r_in_out,
@@ -247,6 +249,7 @@ where
     matching_order: Vec<usize>,
     r_in_out: Vec<Vec<(usize, usize)>>,
     r_new: Vec<Vec<(usize, usize)>>,
+    roots: Vec<bool>,
 }
 
 impl<'a, G0, G1> VF2PP<G0, G1>
@@ -279,7 +282,9 @@ where
         let (g1_node_labels, g1_max_label) = Self::init_graph_nodes_labels(g1, &mut label1);
         let max_label = std::cmp::max(g0_max_label, g1_max_label);
 
-        let matching_order = Self::init_matching_ordering(g0, &g0_node_labels, g0_max_label);
+        let mut roots = vec![false; g0.node_count()];
+        let matching_order =
+            Self::init_matching_ordering(g0, &g0_node_labels, &mut roots, g0_max_label);
         // Second, init RnewRinout nums for every nodes in G1, this will be used to cut labels in third stage.
         let (r_new, r_in_out) =
             Self::init_r_new_inout(g0, &matching_order, &g0_node_labels, g0_max_label);
@@ -293,6 +298,7 @@ where
             matching_order,
             r_in_out,
             r_new,
+            roots,
         }
     }
 
@@ -322,7 +328,12 @@ where
 
     #[allow(dead_code)]
     /// initilize the ordering of g0, the `label_tmp[i]` mean the number of nodes with same label `i`
-    fn init_matching_ordering<G>(g: G, node_labels: &Vec<usize>, max_label: usize) -> Vec<usize>
+    fn init_matching_ordering<G>(
+        g: G,
+        node_labels: &Vec<usize>,
+        roots: &mut Vec<bool>,
+        max_label: usize,
+    ) -> Vec<usize>
     where
         G: IntoNeighborsDirected
             + IntoNeighborsUnirected
@@ -355,10 +366,10 @@ where
         let mut order_idx = 0usize;
         // We need to choose all possible root nodes, then do BFS search using the choosen node as root node
         while order_idx < node_count {
+            let mut root_node_id = usize::MAX;
             // select a root node for bfs search ordering
             for node in g.node_identifiers() {
                 let node_id = g.to_index(node);
-                let mut root_node_id = usize::MAX;
                 if !added[node_id] {
                     if root_node_id == usize::MAX {
                         root_node_id = node_id;
@@ -377,19 +388,20 @@ where
                             Ordering::Greater => {}
                         }
                     }
-
-                    bfs_search_ordering(
-                        g,
-                        root_node_id,
-                        &mut order_idx,
-                        &mut added,
-                        &mut matching_order,
-                        &node_con_num,
-                        node_labels,
-                        &mut node_label_num,
-                    );
                 }
             }
+
+            roots[root_node_id] = true;
+            bfs_search_ordering(
+                g,
+                root_node_id,
+                &mut order_idx,
+                &mut added,
+                &mut matching_order,
+                &node_con_num,
+                node_labels,
+                &mut node_label_num,
+            );
         }
 
         debug_assert!(!matching_order.iter().any(|&v| v == usize::MAX));
@@ -705,6 +717,7 @@ where
 fn isomorphism_match<'a, G0, G1, NM, EM>(
     g0: G0,
     g1: G1,
+    roots: &Vec<bool>,
     order: &Vec<usize>,
     mapping: &mut Vec<usize>,
     r_in_out: &Vec<Vec<(usize, usize)>>,
@@ -754,50 +767,56 @@ where
         }
 
         let n = order[cur_depth];
+        let is_root = roots[n];
         // There are two possible cases:
         // 1. we need to find a fresh candidate in this depth
         // 2. we need to find a candidate from `g1_candidates_nodes_iter`, and forward based previous position
         if cur_depth >= g1_candidate_nodes_iter.len() {
             debug_assert!(cur_depth == g1_candidate_nodes_iter.len());
             // it's a fresh start, we first need to check the neighbor of n
-            let mut has_mapping_neighbor = false;
-            'neighbor: for d in [Outcoming, Incoming] {
-                if !g0.is_directed() && d == Incoming {
-                    break;
-                }
-                for neighbor in g0.neighbors_directed(g0.from_index(n), d) {
-                    let neighbor_mapping_in_g1 = mapping[g0.to_index(neighbor)];
-                    if neighbor_mapping_in_g1 != NOT_IN_MAPPING {
-                        has_mapping_neighbor = true;
-                        let reverse_dir = if d == Outcoming { Incoming } else { Outcoming };
-                        let iter = g1
-                            .neighbors_directed(g1.from_index(neighbor_mapping_in_g1), reverse_dir);
-                        let mut visited: HashSet<usize> = HashSet::new();
+            if is_root {
+                g1_candidate_nodes_iter.push(Box::new(g1.node_identifiers()));
+            } else {
+                let mut has_neighbor = false;
+                'neighbor: for d in [Outcoming, Incoming] {
+                    if !g0.is_directed() && d == Incoming {
+                        break;
+                    }
+                    for neighbor in g0.neighbors_directed(g0.from_index(n), d) {
+                        let neighbor_mapping_in_g1 = mapping[g0.to_index(neighbor)];
+                        if neighbor_mapping_in_g1 != NOT_IN_MAPPING {
+                            let reverse_dir = if d == Outcoming { Incoming } else { Outcoming };
+                            let iter = g1.neighbors_directed(
+                                g1.from_index(neighbor_mapping_in_g1),
+                                reverse_dir,
+                            );
+                            let mut visited: HashSet<usize> = HashSet::new();
 
-                        g1_candidate_nodes_iter.push(Box::new(iter.filter(move |&node_id| {
-                            let node_idx = g1.to_index(node_id);
-                            if !visited.contains(&node_idx) {
-                                visited.insert(node_idx);
-                                true
-                            } else {
-                                false
-                            }
-                        })));
-                        break 'neighbor;
+                            g1_candidate_nodes_iter.push(Box::new(iter.filter(move |&node_id| {
+                                let node_idx = g1.to_index(node_id);
+                                if !visited.contains(&node_idx) {
+                                    visited.insert(node_idx);
+                                    true
+                                } else {
+                                    false
+                                }
+                            })));
+                            has_neighbor = true;
+                            break 'neighbor;
+                        }
                     }
                 }
-            }
 
-            if !has_mapping_neighbor {
-                g1_candidate_nodes_iter.push(Box::new(g1.node_identifiers()));
+                debug_assert!(has_neighbor);
             }
         }
 
         let cur_g1_iter = g1_candidate_nodes_iter.last_mut().unwrap();
         while let Some(m_id) = cur_g1_iter.next() {
             let m = g1.to_index(m_id);
-            // TODO: we could do more when we have root node information
-            if g1_node_cons[m] != G1_CON_IN_MAPPING
+            let m_cons = g1_node_cons[m];
+            if m_cons != G1_CON_IN_MAPPING
+                && (is_root && m_cons == 0 || !is_root && m_cons != 0)
                 && check_feasibility(
                     g0.from_index(n),
                     g1.from_index(m),
@@ -847,7 +866,7 @@ fn mark_node_pair<G>(
 {
     *depth += 1;
     mapping[n] = m;
-    println!("mark node pair: {} {}", n, m);
+    // println!("mark node pair: {} {}", n, m);
     g1_node_cons[m] = G1_CON_IN_MAPPING;
     for neighbor in g1.neighbors_undirected(g1.from_index(m)) {
         let neighbor_idx = g1.to_index(neighbor);
@@ -877,7 +896,7 @@ fn unmark_node_pair<'a, G>(
     }
     let n = matching_order[*depth];
     let m = mapping[n];
-    println!("unmark node pair: {} {}", n, m);
+    // println!("unmark node pair: {} {}", n, m);
     mapping[n] = NOT_IN_MAPPING;
     g1_node_cons[m] = 0;
     for neighbor in g1.neighbors_undirected(g1.from_index(m)) {

@@ -291,7 +291,6 @@ fn full_iso() {
     let b = str_to_graph(FULL_B);
 
     assert!(is_isomorphism_matching(&a, &b, false));
-    println!("----------------------");
     assert!(vf2pp_is_isomorphism_matching(&a, &b, false));
 }
 
