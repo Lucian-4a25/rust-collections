@@ -343,17 +343,15 @@ where
             + GraphProp,
     {
         let node_count = g.node_count();
-        let mut matching_order = vec![usize::MAX; node_count];
-        let mut added = vec![false; node_count];
-        let mut node_con_num = vec![0; node_count];
-        let mut node_label_num = vec![0usize; max_label + 1];
         // init every node label's number
+        let mut node_label_num = vec![0usize; max_label + 1];
         for label in node_labels.iter() {
             node_label_num[*label] += 1;
         }
 
         // init every node's connection number, it's okay to only iterate outcoming edges,
         // cause we will increment for both node and its neighbor.
+        let mut node_con_num = vec![0; node_count];
         for node in g.node_identifiers() {
             let node_id = g.to_index(node);
             for neighbor in g.neighbors_directed(node, crate::graph::Direction::Outcoming) {
@@ -363,6 +361,8 @@ where
             }
         }
 
+        let mut matching_order = vec![usize::MAX; node_count];
+        let mut added = vec![false; node_count];
         let mut order_idx = 0usize;
         // We need to choose all possible root nodes, then do BFS search using the choosen node as root node
         while order_idx < node_count {
@@ -385,7 +385,7 @@ where
                                     root_node_id = node_id;
                                 }
                             }
-                            Ordering::Greater => {}
+                            _ => {}
                         }
                     }
                 }
@@ -480,9 +480,9 @@ where
                     cur_order += 1;
                 }
 
-                // reorder current layer based ordering rule, use Proiority Queue is more efficient than
-                // iterate with two for loops, as the same time, the third ordering condition can't be updated
-                // using this method, it's trade-offs from performance aspect.
+                // reorder current layer based on ordering rule, use Proiority Queue is more efficient than
+                // iterate with two for loops, but the same time, the third ordering condition may be not accurate,
+                // it's trade-offs from performance aspect.
                 let mut layer_ordering = BinaryHeap::new();
                 for order in start_of_layer..end_of_layer + 1 {
                     let cur_node_idx = matching_order[order];
@@ -769,8 +769,8 @@ where
         let n = order[cur_depth];
         let is_root = roots[n];
         // There are two possible cases:
-        // 1. we need to find a fresh candidate in this depth
-        // 2. we need to find a candidate from `g1_candidates_nodes_iter`, and forward based previous position
+        // 1. A fresh candidate in this depth
+        // 2. A candidate from `g1_candidates_nodes_iter`, and need to forward with previous candidate iter
         if cur_depth >= g1_candidate_nodes_iter.len() {
             debug_assert!(cur_depth == g1_candidate_nodes_iter.len());
             // it's a fresh start, we first need to check the neighbor of n
@@ -1062,7 +1062,7 @@ where
         }
     }
 
-    // check label and mapping completeness
+    // check label and neighbor mapping completeness
     for d in [Outcoming, Incoming] {
         if !g1.is_directed() && d == Incoming {
             break;
@@ -1077,14 +1077,16 @@ where
             let neighbor_con = g1_node_cons[neighbor_id];
             if neighbor_con == G1_CON_IN_MAPPING && g1_mapping[neighbor_id] != 0 {
                 return false;
-            } else if neighbor_con > 0 && !subgraph {
-                if label_in_out_tmp[g1_node_labels[neighbor_id]] > 0 {
-                    return false;
-                }
-            } else if neighbor_con == 0 && !subgraph {
-                if label_new_tmp[g1_node_labels[neighbor_id]] > 0 {
-                    return false;
-                }
+            } else if neighbor_con > 0
+                && !subgraph
+                && label_in_out_tmp[g1_node_labels[neighbor_id]] > 0
+            {
+                return false;
+            } else if neighbor_con == 0
+                && !subgraph
+                && label_new_tmp[g1_node_labels[neighbor_id]] > 0
+            {
+                return false;
             }
         }
     }
