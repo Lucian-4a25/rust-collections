@@ -1,13 +1,13 @@
 use crate::{
     graph::visit::{
-        EdgeRef, IntoEdges, IntoNeiborghbors, IntoNodeIdentifiers, NodeIndexable, VisitMap,
-        Visitable,
+        EdgeRef, GraphBase, IntoEdges, IntoNeiborghbors, IntoNodeIdentifiers, NodeCount,
+        NodeIndexable, VisitMap, Visitable,
     },
     vecdeque_cus::VecDeque,
 };
 
 /// compute graph matching using greedy heuristic method.
-pub fn greedy_matching<G>(g: G) -> Matching
+pub fn greedy_matching<G>(g: G) -> Matching<G>
 where
     G: IntoNodeIdentifiers + Visitable + NodeIndexable + IntoNeiborghbors,
 {
@@ -28,7 +28,11 @@ where
         }
     }
 
-    Matching { mate, edges_num }
+    Matching {
+        mate,
+        edges_num,
+        graph: g,
+    }
 }
 
 #[inline]
@@ -49,7 +53,7 @@ where
 }
 
 /// compute graph maximum matching using Gabow's algorithm, https://dl.acm.org/doi/10.1145/321941.321942
-pub fn maximum_matching<G>(g: G) -> Matching
+pub fn maximum_matching<G>(g: G) -> Matching<G>
 where
     G: IntoNeiborghbors + IntoNodeIdentifiers + NodeIndexable + IntoEdges + Visitable,
 {
@@ -131,7 +135,11 @@ where
 
     mate.pop();
 
-    Matching { mate, edges_num }
+    Matching {
+        mate,
+        edges_num,
+        graph: g,
+    }
 }
 
 /// assign edge label
@@ -254,7 +262,118 @@ impl Label {
     }
 }
 
-pub struct Matching {
+pub struct Matching<G>
+where
+    G: GraphBase,
+{
+    graph: G,
     mate: Vec<Option<usize>>,
     edges_num: usize,
+}
+
+impl<G> Matching<G>
+where
+    G: NodeCount + GraphBase + Copy,
+{
+    pub fn is_perfect(&self) -> bool {
+        let node_count = self.graph.node_count();
+        node_count % 2 == 0 && node_count / 2 == self.edges_num
+    }
+}
+
+impl<G> Matching<G>
+where
+    G: NodeIndexable + Copy,
+{
+    pub fn mate(&self, node: G::NodeId) -> Option<G::NodeId> {
+        self.mate
+            .get(self.graph.to_index(node))
+            .and_then(|&n| n.map(|n_id| self.graph.from_index(n_id)))
+        // .map_or(None, |v| v.map_or(None, |n| Some(self.graph.from_index(n))))
+    }
+
+    pub fn edges(&self) -> MatchedEdges<'_, G> {
+        MatchedEdges {
+            graph: self.graph,
+            pos: 0,
+            mate: self.mate.iter(),
+        }
+    }
+
+    pub fn nodes(&self) -> MatchedNodes<'_, G> {
+        MatchedNodes {
+            graph: self.graph,
+            mate: self.mate.iter(),
+            pos: 0,
+        }
+    }
+
+    pub fn contains_edge(&self, n: G::NodeId, m: G::NodeId) -> bool {
+        match self.mate[self.graph.to_index(n)] {
+            Some(im) => im == self.graph.to_index(m),
+            None => false,
+        }
+    }
+
+    pub fn contains_node(&self, n: G::NodeId) -> bool {
+        self.mate[self.graph.to_index(n)].is_some()
+    }
+
+    pub fn len(&self) -> usize {
+        self.edges_num
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+pub struct MatchedEdges<'a, G>
+where
+    G: NodeIndexable,
+{
+    graph: G,
+    mate: std::slice::Iter<'a, Option<usize>>,
+    pos: usize,
+}
+
+impl<'a, G: NodeIndexable> Iterator for MatchedEdges<'a, G> {
+    type Item = (G::NodeId, G::NodeId);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(m_op) = self.mate.next() {
+            if let Some(m) = m_op {
+                let r = Some((self.graph.from_index(self.pos), self.graph.from_index(*m)));
+                self.pos += 1;
+                return r;
+            }
+
+            self.pos += 1;
+        }
+
+        None
+    }
+}
+
+pub struct MatchedNodes<'a, G: NodeIndexable> {
+    graph: G,
+    mate: std::slice::Iter<'a, Option<usize>>,
+    pos: usize,
+}
+
+impl<'a, G: NodeIndexable> Iterator for MatchedNodes<'a, G> {
+    type Item = G::NodeId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(m_op) = self.mate.next() {
+            if m_op.is_some() {
+                let res = self.graph.from_index(self.pos);
+                self.pos += 1;
+                return Some(res);
+            }
+            self.pos += 1;
+        }
+
+        None
+    }
 }
