@@ -626,3 +626,36 @@ fn check_ptr_addr_of_world() {
     println!("the addr of c is: {:p}", p_c);
     println!("the addr of pointer of c is: {:p}", pp_c);
 }
+
+#[test]
+fn variable_shadow_test() {
+    #[derive(Debug)]
+    struct Dummy(usize);
+    impl Drop for Dummy {
+        fn drop(&mut self) {
+            println!("{:?} is droped, pointer location: {:p}", *self, self);
+        }
+    }
+
+    let mut d = Dummy(3);
+
+    {
+        let mut closure = || {
+            // 已有变量被重新赋值时只是对引用指向的内存区域的内容的覆盖，而之前的
+            // 内存区域的对象被 Drop了，这并不会改变已有变量的所有权，可以简单的认为赋值操作是
+            // std::ptr::drop_in_place(&mut d); 这个和 drop(std::ptr::read(&d)) 是差不多的
+            // 接着，
+            // std::ptr::write(&mut d, NewValue)
+            // 这个过程中并未发生 d 的 move，只需要 borrow mut d 即可。
+            // 只有当 d 当作表达式赋值给其它变量的时候，d 才会发生 move，而被赋值则不属于这种情况
+            d = Dummy(5);
+        };
+
+        closure();
+
+        // let d = Dummy(7);
+        // drop(d);
+    }
+
+    println!("dummy = {:?}, pointer location: {:p}", d, &d);
+}

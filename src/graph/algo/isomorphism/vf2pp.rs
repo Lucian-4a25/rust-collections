@@ -252,7 +252,7 @@ where
     roots: Vec<bool>,
 }
 
-impl<'a, G0, G1> VF2PP<G0, G1>
+impl<G0, G1> VF2PP<G0, G1>
 where
     G0: IntoNeighborsDirected
         + IntoNeighborsUnirected
