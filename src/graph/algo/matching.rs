@@ -16,16 +16,15 @@ where
     let mut edges_num = 0usize;
     for node in g.node_identifiers() {
         let mut first = Some(node);
-        if visited.visit(node) {
-            dfs_non_backtracing(g, node, &mut visited, |another| {
-                if let Some(first) = first.take() {
-                    mate[g.to_index(first)] = Some(g.to_index(another));
-                    edges_num += 1;
-                } else {
-                    first = Some(another);
-                }
-            });
-        }
+        dfs_non_backtracing(g, node, &mut visited, |another| {
+            if let Some(first) = first.take() {
+                mate[g.to_index(first)] = Some(g.to_index(another));
+                mate[g.to_index(another)] = Some(g.to_index(first));
+                edges_num += 1;
+            } else {
+                first = Some(another);
+            }
+        });
     }
 
     Matching {
@@ -205,11 +204,14 @@ fn assign_edge_lable<G>(
 #[inline]
 fn augment_path(outer: usize, target: usize, mate: &mut Vec<Option<usize>>, label: &Vec<Label>) {
     // R1: set t = MATE(v), MATE(v) = w, if MATE(t) != Some(outer), outer is the first Outer label, return
-    let t = mate[outer].unwrap();
+    let t = mate[outer];
     mate[outer] = Some(target);
-    if mate[t] != Some(outer) {
+    // when outer has no mate, it mean we already reach
+    if t.is_none() {
         return;
     }
+
+    let t = t.unwrap();
 
     // R2: If v has a vertex label, set MATE(t) = LABEL(v), call R(LABEL(v), t)
     if let Some(next_outer) = label[outer].try_next_outer() {
@@ -219,11 +221,14 @@ fn augment_path(outer: usize, target: usize, mate: &mut Vec<Option<usize>>, labe
     }
 
     // R3:  (Vertex v has an edge label ) Set x, y to vertices so LABEL(v) = n(xy),
-    // call R(x, y) recurslvely, call R(y, x) recurslvely,
+    // call R(x, y) recurslvely, call R(y, x) recurslvely
     if let Some((x, y)) = label[outer].try_edge_outer() {
         augment_path(x, y, mate, label);
         augment_path(y, x, mate, label);
+        return;
     }
+
+    panic!("Unexpected label when augmenting path");
 }
 
 #[derive(Clone, Copy)]
@@ -343,12 +348,20 @@ impl<'a, G: NodeIndexable> Iterator for MatchedEdges<'a, G> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(m_op) = self.mate.next() {
             if let Some(m) = m_op {
-                let r = Some((self.graph.from_index(self.pos), self.graph.from_index(*m)));
+                // ignore repeated result
+                let result = if *m > self.pos {
+                    Some((self.graph.from_index(self.pos), self.graph.from_index(*m)))
+                } else {
+                    None
+                };
                 self.pos += 1;
-                return r;
-            }
 
-            self.pos += 1;
+                if result.is_some() {
+                    return result;
+                }
+            } else {
+                self.pos += 1;
+            }
         }
 
         None

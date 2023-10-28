@@ -5,3 +5,4 @@ mod dijkstra;
 mod feedback_arc_set;
 mod floyd_warshall;
 mod isomorphism;
+mod matching;

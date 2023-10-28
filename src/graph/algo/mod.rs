@@ -7,14 +7,13 @@ pub mod isomorphism;
 pub mod k_shortest_path;
 pub mod matching;
 
+use super::visit::{IntoNeighborsDirected, IntoNodeIdentifiers, Topological, VisitMap, Visitable};
 use core::ops::Add;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     hash::Hash,
 };
-
-use super::visit::{IntoNeighborsDirected, IntoNodeIdentifiers, Topological, VisitMap, Visitable};
 
 /// A struct to record the edge weight in reverse order
 pub struct MinScore<T: PartialOrd, N>(T, N);
