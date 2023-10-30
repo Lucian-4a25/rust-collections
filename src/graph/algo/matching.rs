@@ -187,6 +187,7 @@ fn assign_edge_lable<G>(
             first[v] = join;
             let v_mate = mate[v].unwrap();
             // Do label[v_mate] must be Vertex label?
+            // Yes, casue 'v' must be a nonouter node, which has a vertex label mate.
             let next_outer = label[v_mate].try_next_outer().unwrap();
             v = first[next_outer];
         }
@@ -206,8 +207,12 @@ fn augment_path(outer: usize, target: usize, mate: &mut Vec<Option<usize>>, labe
     // R1: set t = MATE(v), MATE(v) = w, if MATE(t) != Some(outer), outer is the first Outer label, return
     let t = mate[outer];
     mate[outer] = Some(target);
-    // when outer has no mate, it mean we already reach
-    if t.is_none() {
+    // R1: If MATE(t) != v, return. (This is the core of E algo.)
+    // There are two cases:
+    // 1. when outer has no mate, it mean we already reach the root node
+    // 2. when t's (t is outer's mate) mate is not outer, it indicate t is already
+    // matched with another node outside the circle, which means we don't need to check it again.
+    if t != Some(outer) {
         return;
     }
 
@@ -222,6 +227,7 @@ fn augment_path(outer: usize, target: usize, mate: &mut Vec<Option<usize>>, labe
 
     // R3:  (Vertex v has an edge label ) Set x, y to vertices so LABEL(v) = n(xy),
     // call R(x, y) recurslvely, call R(y, x) recurslvely
+    // Q: Did this really do the correct augment?
     if let Some((x, y)) = label[outer].try_edge_outer() {
         augment_path(x, y, mate, label);
         augment_path(y, x, mate, label);
