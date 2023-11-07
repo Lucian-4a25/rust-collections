@@ -10,6 +10,7 @@ edition = "2021"
 petgraph = "0.6.4"
 indexmap = "2.0.0"
 fixedbitset = "0.4.2"
+itertools = { version = "0.11.0", default-features = false }
 
 [profile.release]
 debug = true

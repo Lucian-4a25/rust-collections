@@ -7,3 +7,4 @@ mod floyd_warshall;
 mod isomorphism;
 mod k_shortest;
 mod matching;
+mod simple_path;
