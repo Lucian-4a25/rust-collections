@@ -13,6 +13,7 @@ pub mod binary_heap_cus;
 pub mod btreemap_cus;
 pub mod graph;
 pub mod linked_list_cus;
+pub mod lru;
 mod raw_vec;
 pub mod vec_cus;
 pub mod vecdeque_cus;
